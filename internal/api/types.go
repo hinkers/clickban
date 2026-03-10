@@ -115,6 +115,7 @@ type Task struct {
 	SpaceID     string       `json:"space_id"`
 	URL         string       `json:"url"`
 	CustomItem  *CustomItem  `json:"custom_item"`
+	Subtasks    []Task       `json:"subtasks"`
 }
 
 // Tag represents a task tag.
@@ -136,6 +137,16 @@ type Priority struct {
 // TasksResponse is the API response for listing tasks.
 type TasksResponse struct {
 	Tasks []Task `json:"tasks"`
+}
+
+// MembersResponse is the API response for listing workspace members.
+type MembersResponse struct {
+	Members []Member `json:"members"`
+}
+
+// CustomItemsResponse is the API response for listing custom task types.
+type CustomItemsResponse struct {
+	CustomItems []CustomItem `json:"custom_items"`
 }
 
 // Comment represents a comment on a task.
@@ -215,11 +226,16 @@ type CreateCommentRequest struct {
 	NotifyAll   bool   `json:"notify_all"`
 }
 
+// UpdateCommentRequest is the payload for updating a comment.
+type UpdateCommentRequest struct {
+	CommentText string `json:"comment_text"`
+}
+
 // UpdateTaskRequest is the payload for updating a task.
 type UpdateTaskRequest struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
-	Status      string   `json:"status,omitempty"`
+	Status      *string  `json:"status,omitempty"`
 	Priority    *int     `json:"priority,omitempty"`
 	DueDate     *int64   `json:"due_date,omitempty"`
 	StartDate   *int64   `json:"start_date,omitempty"`
