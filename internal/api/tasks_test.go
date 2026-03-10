@@ -74,11 +74,10 @@ func TestGetTaskWithSubtasks(t *testing.T) {
 }
 
 func TestResolveLeafTasks_NoSubtasks(t *testing.T) {
-	client := api.NewClient("pk_test")
 	tasks := []api.Task{
 		{ID: "t1", Name: "Task 1"},
 	}
-	leaves := client.ResolveLeafTasks(tasks, 5)
+	leaves := api.ResolveLeafTasks(tasks, 5)
 	if len(leaves) != 1 {
 		t.Fatalf("expected 1 leaf, got %d", len(leaves))
 	}
@@ -88,7 +87,6 @@ func TestResolveLeafTasks_NoSubtasks(t *testing.T) {
 }
 
 func TestResolveLeafTasks_WithSubtasks(t *testing.T) {
-	client := api.NewClient("pk_test")
 	tasks := []api.Task{
 		{
 			ID:   "parent",
@@ -99,14 +97,13 @@ func TestResolveLeafTasks_WithSubtasks(t *testing.T) {
 			},
 		},
 	}
-	leaves := client.ResolveLeafTasks(tasks, 5)
+	leaves := api.ResolveLeafTasks(tasks, 5)
 	if len(leaves) != 2 {
 		t.Fatalf("expected 2 leaves, got %d", len(leaves))
 	}
 }
 
 func TestResolveLeafTasks_DepthLimit(t *testing.T) {
-	client := api.NewClient("pk_test")
 	tasks := []api.Task{
 		{
 			ID:   "parent",
@@ -123,7 +120,7 @@ func TestResolveLeafTasks_DepthLimit(t *testing.T) {
 		},
 	}
 	// depth limit 1: should stop at child1 and not go to grandchild1
-	leaves := client.ResolveLeafTasks(tasks, 1)
+	leaves := api.ResolveLeafTasks(tasks, 1)
 	if len(leaves) != 1 {
 		t.Fatalf("expected 1 leaf (depth limit 1 stops at children), got %d", len(leaves))
 	}

@@ -26,7 +26,10 @@ func (c *Client) UpdateTask(taskID string, req *UpdateTaskRequest) error {
 	return nil
 }
 
-func (c *Client) ResolveLeafTasks(tasks []Task, maxDepth int) []Task {
+// ResolveLeafTasks walks the task tree and returns only leaf tasks (those with no children).
+// It uses already-fetched subtask data. If depth limit is reached, the task at that depth
+// is treated as a leaf regardless of whether it has children.
+func ResolveLeafTasks(tasks []Task, maxDepth int) []Task {
 	var leaves []Task
 	for _, task := range tasks {
 		leaves = append(leaves, resolveLeaves(task, 0, maxDepth)...)
