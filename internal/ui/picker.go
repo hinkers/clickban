@@ -49,6 +49,14 @@ func (p Picker) IsSelected(index int) bool {
 	return p.selected[index]
 }
 
+// SetSelected sets the selection state of the item at the given index.
+func (p *Picker) SetSelected(index int, val bool) {
+	if p.selected == nil {
+		p.selected = make(map[int]bool)
+	}
+	p.selected[index] = val
+}
+
 // Init implements tea.Model.
 func (p Picker) Init() tea.Cmd {
 	return nil
