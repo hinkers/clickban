@@ -11,11 +11,16 @@ func (c *Client) GetCurrentUser() (*User, error) {
 }
 
 func (c *Client) GetWorkspaceMembers(teamID string) ([]Member, error) {
-	var resp MembersResponse
-	if err := c.Get(fmt.Sprintf("/team/%s/member", teamID), &resp); err != nil {
+	var resp TeamsResponse
+	if err := c.Get("/team", &resp); err != nil {
 		return nil, fmt.Errorf("get workspace members: %w", err)
 	}
-	return resp.Members, nil
+	for _, team := range resp.Teams {
+		if team.ID == teamID {
+			return team.Members, nil
+		}
+	}
+	return nil, fmt.Errorf("team %s not found", teamID)
 }
 
 func (c *Client) GetTaskTypes(teamID string) ([]CustomItem, error) {

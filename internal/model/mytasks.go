@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
-	"github.com/nhinkley/clickban/internal/ui"
+	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/ui"
 )
 
 // MyTasks is the my-tasks table view model.
@@ -108,7 +108,8 @@ func (m MyTasks) renderTable(width, height int) string {
 	// Column widths
 	priW := 10
 	statusW := 16
-	nameW := width - priW - statusW - 6
+	timeW := 10
+	nameW := width - priW - statusW - timeW - 8
 	if nameW < 10 {
 		nameW = 10
 	}
@@ -118,7 +119,8 @@ func (m MyTasks) renderTable(width, height int) string {
 	hPri := headerStyle.Width(priW).Render("Priority")
 	hName := headerStyle.Width(nameW).Render("Task")
 	hStatus := headerStyle.Width(statusW).Render("Status")
-	sb.WriteString(fmt.Sprintf("  %s  %s  %s\n", hPri, hName, hStatus))
+	hTime := headerStyle.Width(timeW).Render("Time")
+	sb.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n", hPri, hName, hStatus, hTime))
 
 	divider := lipgloss.NewStyle().Foreground(ui.ColorBorder).Render(strings.Repeat("─", width-2))
 	sb.WriteString("  " + divider + "\n")
@@ -159,16 +161,19 @@ func (m MyTasks) renderTable(width, height int) string {
 		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW)
 		statusCell := statusStyle.Render(task.Status.Status)
 
+		// Time tracked
+		timeStr := ""
+		if task.TimeSpent > 0 {
+			timeStr = ui.FormatDuration(task.TimeSpent)
+		}
+		timeStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(timeW)
+		timeCell := timeStyle.Render(timeStr)
+
 		prefix := "  "
 		if selected {
 			prefix = "> "
 		}
-		sb.WriteString(fmt.Sprintf("%s%s  %s  %s\n", prefix, priCell, nameCell, statusCell))
-	}
-
-	panelStyle := ui.BorderStyle.Width(width).Height(height)
-	if true { // always use border style
-		_ = panelStyle
+		sb.WriteString(fmt.Sprintf("%s%s  %s  %s  %s\n", prefix, priCell, nameCell, statusCell, timeCell))
 	}
 
 	return ui.BorderStyle.

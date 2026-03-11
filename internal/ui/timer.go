@@ -12,11 +12,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// TimerMode controls whether the timer input collects a duration or a time range.
+// TimerMode controls which time entry mode is active.
 type TimerMode int
 
 const (
-	TimerModeDuration  TimerMode = iota // e.g. "2h30m"
+	TimerModeMenu      TimerMode = iota // sub-menu choosing mode
+	TimerModeLive                       // start/stop timer
+	TimerModeDuration                   // e.g. "2h30m"
 	TimerModeTimeRange                  // e.g. "10:30am to 12:00pm"
 )
 
@@ -27,6 +29,8 @@ type TimerResult struct {
 	// For time range mode
 	Start time.Time
 	End   time.Time
+	// For live mode
+	Action string // "start" or "stop"
 	// Set true if user cancelled
 	Cancelled bool
 	// Which mode produced the result
@@ -35,21 +39,27 @@ type TimerResult struct {
 
 // TimerInput is a Bubble Tea model for entering time durations or ranges.
 type TimerInput struct {
-	mode  TimerMode
-	input textinput.Model
+	mode         TimerMode
+	input        textinput.Model
+	timerRunning bool
 }
 
-// NewTimerInput creates a new TimerInput model in duration mode.
+// NewTimerInput creates a new TimerInput model showing the mode menu.
 func NewTimerInput() TimerInput {
 	ti := textinput.New()
 	ti.Placeholder = "e.g. 2h30m or 10:30am to 12:00pm"
-	ti.Focus()
 	ti.CharLimit = 64
 
 	return TimerInput{
-		mode:  TimerModeDuration,
-		input: ti,
+		mode: TimerModeMenu,
 	}
+}
+
+// NewTimerInputWithRunning creates a TimerInput that knows if a timer is running.
+func NewTimerInputWithRunning(running bool) TimerInput {
+	t := NewTimerInput()
+	t.timerRunning = running
+	return t
 }
 
 // Init implements tea.Model.
@@ -61,29 +71,58 @@ func (t TimerInput) Init() tea.Cmd {
 func (t TimerInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
-			raw := strings.TrimSpace(t.input.Value())
-			// Try duration first, then time range
-			if ms, err := ParseDuration(raw); err == nil {
+		switch t.mode {
+		case TimerModeMenu:
+			switch msg.String() {
+			case "1":
+				action := "start"
+				if t.timerRunning {
+					action = "stop"
+				}
 				return t, func() tea.Msg {
-					return TimerResult{DurationMs: ms, Mode: TimerModeDuration}
+					return TimerResult{Mode: TimerModeLive, Action: action}
+				}
+			case "2":
+				t.mode = TimerModeDuration
+				t.input.Placeholder = "e.g. 2h30m, 1h, 45m"
+				t.input.Focus()
+				return t, textinput.Blink
+			case "3":
+				t.mode = TimerModeTimeRange
+				t.input.Placeholder = "e.g. 10:30am to 12:00pm"
+				t.input.Focus()
+				return t, textinput.Blink
+			case "esc":
+				return t, func() tea.Msg {
+					return TimerResult{Cancelled: true}
 				}
 			}
-			if strings.Contains(strings.ToLower(raw), " to ") {
-				start, end, err := ParseTimeRange(raw, time.Now())
-				if err == nil {
-					return t, func() tea.Msg {
-						return TimerResult{Start: start, End: end, Mode: TimerModeTimeRange}
-					}
-				}
-			}
-			// Invalid input — stay in model, could add error display
 			return t, nil
 
-		case tea.KeyEsc:
-			return t, func() tea.Msg {
-				return TimerResult{Cancelled: true}
+		default:
+			// Duration or TimeRange input mode
+			switch msg.Type {
+			case tea.KeyEnter:
+				raw := strings.TrimSpace(t.input.Value())
+				if t.mode == TimerModeDuration {
+					if ms, err := ParseDuration(raw); err == nil {
+						return t, func() tea.Msg {
+							return TimerResult{DurationMs: ms, Mode: TimerModeDuration}
+						}
+					}
+				} else {
+					start, end, err := ParseTimeRange(raw, time.Now())
+					if err == nil {
+						return t, func() tea.Msg {
+							return TimerResult{Start: start, End: end, Mode: TimerModeTimeRange}
+						}
+					}
+				}
+				return t, nil
+			case tea.KeyEsc:
+				t.mode = TimerModeMenu
+				t.input.SetValue("")
+				return t, nil
 			}
 		}
 	}
@@ -102,13 +141,38 @@ func (t TimerInput) View() string {
 		Bold(true)
 	sb.WriteString(titleStyle.Render("Log Time"))
 	sb.WriteString("\n\n")
-	sb.WriteString(t.input.View())
-	sb.WriteString("\n\n")
 
 	hintStyle := lipgloss.NewStyle().Foreground(ColorFgDim)
-	sb.WriteString(hintStyle.Render("Formats: 2h30m  •  10:30am to 12:00pm  •  10:30am to now"))
-	sb.WriteString("\n")
-	sb.WriteString(hintStyle.Render("enter: confirm  •  esc: cancel"))
+
+	switch t.mode {
+	case TimerModeMenu:
+		itemStyle := lipgloss.NewStyle().Foreground(ColorFg)
+		timerLabel := "Start timer"
+		if t.timerRunning {
+			timerLabel = "Stop timer"
+		}
+		sb.WriteString(itemStyle.Render("1. " + timerLabel))
+		sb.WriteString("\n")
+		sb.WriteString(itemStyle.Render("2. Manual duration"))
+		sb.WriteString("\n")
+		sb.WriteString(itemStyle.Render("3. Time range"))
+		sb.WriteString("\n\n")
+		sb.WriteString(hintStyle.Render("1/2/3: select  •  esc: cancel"))
+
+	case TimerModeDuration:
+		sb.WriteString(t.input.View())
+		sb.WriteString("\n\n")
+		sb.WriteString(hintStyle.Render("Format: 2h30m, 3h, 45m"))
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("enter: confirm  •  esc: back"))
+
+	case TimerModeTimeRange:
+		sb.WriteString(t.input.View())
+		sb.WriteString("\n\n")
+		sb.WriteString(hintStyle.Render("Format: 10:30am to 12:00pm  •  10:30am to now"))
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("enter: confirm  •  esc: back"))
+	}
 
 	return sb.String()
 }

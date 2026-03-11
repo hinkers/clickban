@@ -5,9 +5,9 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/nhinkley/clickban/internal/api"
-	"github.com/nhinkley/clickban/internal/config"
-	"github.com/nhinkley/clickban/internal/model"
+	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/config"
+	"github.com/hinkers/clickban/internal/model"
 )
 
 func main() {

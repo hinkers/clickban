@@ -139,9 +139,13 @@ type TasksResponse struct {
 	Tasks []Task `json:"tasks"`
 }
 
-// MembersResponse is the API response for listing workspace members.
-type MembersResponse struct {
-	Members []Member `json:"members"`
+// TeamsResponse is the API response for listing authorized workspaces.
+type TeamsResponse struct {
+	Teams []struct {
+		ID      string   `json:"id"`
+		Name    string   `json:"name"`
+		Members []Member `json:"members"`
+	} `json:"teams"`
 }
 
 // CustomItemsResponse is the API response for listing custom task types.

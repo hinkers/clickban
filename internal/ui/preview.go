@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/api"
 )
 
 // RenderPreview renders the task detail preview pane.

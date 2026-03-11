@@ -34,6 +34,8 @@ func NewEditor(title, initial string) Editor {
 	ti.SetValue(initial)
 	ti.Focus()
 	ti.CharLimit = 0 // unlimited
+	ti.Width = 50
+	ti.Placeholder = "Type here…"
 
 	return Editor{
 		title: title,

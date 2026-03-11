@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nhinkley/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/api"
 )
 
 func TestRenderPreview_ContainsTitle(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
-	"github.com/nhinkley/clickban/internal/ui"
+	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/ui"
 )
 
 // DetailFocus controls which panel is focused in the detail view.
@@ -128,6 +128,10 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 			d.loadingCmts = false
 		}
 
+	case StatusMsg:
+		d.statusMsg = msg.Text
+		return d, nil
+
 	case ui.PickerResult:
 		return d.handlePickerResult(msg)
 
@@ -208,15 +212,23 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 
 	case "e":
 		if d.focus == FocusMain {
-			// open external editor for description
-			return d, ui.OpenExternalEditor(d.task.Description)
+			// inline editor for description
+			d.editor = ui.NewEditor("Edit Description", d.task.Description)
+			d.overlay = OverlayDescription
+		} else if d.focus == FocusComments && len(d.comments) > 0 {
+			// edit own comment
+			cmt := d.comments[d.cmtCursor]
+			if d.state.CurrentUser != nil && cmt.User.ID == d.state.CurrentUser.ID {
+				d.editor = ui.NewEditor("Edit Comment", cmt.CommentText)
+				d.overlay = OverlayEditComment
+			}
 		}
 
 	case "E":
 		if d.focus == FocusMain {
-			// inline editor for description (single line — limited but available)
-			d.editor = ui.NewEditor("Edit Description", d.task.Description)
+			// open external editor for description
 			d.overlay = OverlayDescription
+			return d, ui.OpenExternalEditor(d.task.Description)
 		}
 
 	case "s":
@@ -267,15 +279,6 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 		d.editor = ui.NewEditor("Add Comment", "")
 		d.overlay = OverlayComment
 
-	case "enter":
-		if d.focus == FocusComments && len(d.comments) > 0 {
-			// Edit selected comment (only if it's by the current user)
-			cmt := d.comments[d.cmtCursor]
-			if d.state.CurrentUser != nil && cmt.User.ID == d.state.CurrentUser.ID {
-				d.editor = ui.NewEditor("Edit Comment", cmt.CommentText)
-				d.overlay = OverlayEditComment
-			}
-		}
 	}
 	return d, nil
 }
@@ -303,12 +306,16 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 	switch overlay {
 	case OverlayStatus:
 		newStatus := res.Selected[0].Label
+		newStatusLower := strings.ToLower(newStatus)
 		d.task.Status.Status = newStatus
+		d.task.Status.ID = res.Selected[0].ID
+		d.updatedTask = &d.task
 		return d, func() tea.Msg {
-			if err := client.UpdateTask(taskID, &api.UpdateTaskRequest{Status: &newStatus}); err != nil {
+			err := client.UpdateTask(taskID, &api.UpdateTaskRequest{Status: &newStatusLower})
+			if err != nil {
 				return StatusMsg{Text: "status update failed: " + err.Error()}
 			}
-			return StatusMsg{Text: "Status updated"}
+			return StatusMsg{Text: "Status → " + newStatus}
 		}
 
 	case OverlayPriority:
@@ -325,9 +332,17 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 		}
 
 	case OverlayType:
-		// Task type update is not directly supported in UpdateTaskRequest.
-		// Show a status message indicating it's not yet implemented.
-		d.statusMsg = "Task type changes not supported via API"
+		typeID, err := strconv.Atoi(res.Selected[0].ID)
+		if err == nil {
+			d.task.CustomItem = &api.CustomItem{ID: typeID, Name: res.Selected[0].Label}
+			return d, func() tea.Msg {
+				body := map[string]interface{}{"custom_item_id": typeID}
+				if err := client.Put(fmt.Sprintf("/task/%s", taskID), body, nil); err != nil {
+					return StatusMsg{Text: "task type update failed: " + err.Error()}
+				}
+				return StatusMsg{Text: "Task type updated"}
+			}
+		}
 
 	case OverlayAssignees:
 		// Compute add/remove lists
@@ -356,6 +371,16 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 				removeIDs = append(removeIDs, id)
 			}
 		}
+
+		// Optimistically update local assignees
+		var newAssignees []api.User
+		for _, item := range pickerItems {
+			if selectedIDs[item.ID] {
+				id, _ := strconv.Atoi(item.ID)
+				newAssignees = append(newAssignees, api.User{ID: id, Username: item.Label})
+			}
+		}
+		d.task.Assignees = newAssignees
 
 		assignees := &api.Assignees{Add: addIDs, Remove: removeIDs}
 		return d, func() tea.Msg {
@@ -456,6 +481,24 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	client := d.state.Client
 	taskID := d.task.ID
 
+	if res.Mode == ui.TimerModeLive {
+		teamID := d.state.TeamID
+		if res.Action == "start" {
+			return d, func() tea.Msg {
+				if err := client.StartTimer(teamID, taskID); err != nil {
+					return StatusMsg{Text: "start timer failed: " + err.Error()}
+				}
+				return StatusMsg{Text: "Timer started"}
+			}
+		}
+		return d, func() tea.Msg {
+			if err := client.StopTimer(teamID); err != nil {
+				return StatusMsg{Text: "stop timer failed: " + err.Error()}
+			}
+			return StatusMsg{Text: "Timer stopped"}
+		}
+	}
+
 	if res.Mode == ui.TimerModeDuration {
 		ms := res.DurationMs
 		return d, func() tea.Msg {
@@ -508,7 +551,8 @@ func (d Detail) View() string {
 	if d.focus == FocusMain {
 		footerBindings = []ui.KeyBinding{
 			{Key: "i", Label: "title"},
-			{Key: "e", Label: "desc (editor)"},
+			{Key: "e", Label: "desc"},
+		{Key: "E", Label: "desc ($EDITOR)"},
 			{Key: "s", Label: "status"},
 			{Key: "p", Label: "priority"},
 			{Key: "a", Label: "assignees"},
@@ -520,7 +564,7 @@ func (d Detail) View() string {
 	} else {
 		footerBindings = []ui.KeyBinding{
 			{Key: "j/k", Label: "navigate"},
-			{Key: "enter", Label: "edit comment"},
+			{Key: "e", Label: "edit comment"},
 			{Key: "c", Label: "add comment"},
 			{Key: "tab", Label: "main"},
 			{Key: "q", Label: "back"},
@@ -571,7 +615,13 @@ func (d Detail) renderWithOverlay() string {
 	padding := strings.Repeat("\n", topPad)
 	leftStr := strings.Repeat(" ", leftPad)
 
-	return padding + leftStr + overlayBox
+	// Indent every line of the overlay box
+	lines := strings.Split(overlayBox, "\n")
+	for i, line := range lines {
+		lines[i] = leftStr + line
+	}
+
+	return padding + strings.Join(lines, "\n")
 }
 
 func (d Detail) renderMain(width, height int) string {
@@ -663,7 +713,7 @@ func (d Detail) renderMain(width, height int) string {
 	// Status message
 	if d.statusMsg != "" {
 		sb.WriteString("\n\n")
-		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorYellow).Render(d.statusMsg))
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorYellow).Width(width-4).Render(d.statusMsg))
 	}
 
 	borderStyle := ui.BorderStyle
@@ -704,11 +754,7 @@ func (d Detail) renderComments(width, height int) string {
 			if selected {
 				textStyle = textStyle.Bold(true)
 			}
-			text := cmt.CommentText
-			if len(text) > width-6 {
-				text = text[:width-7] + "…"
-			}
-			textLine := "  " + textStyle.Render(text)
+			textLine := "  " + textStyle.Width(width-6).Render(cmt.CommentText)
 
 			sb.WriteString(userLine + "\n" + textLine + "\n\n")
 		}
@@ -728,8 +774,19 @@ func (d Detail) mainWidth() int {
 	return d.width * 2 / 3
 }
 
-// statusPickerItems returns picker items for the available statuses.
+// statusPickerItems returns picker items for the task's list statuses.
 func (d Detail) statusPickerItems() []ui.PickerItem {
+	// Use the task's list statuses if available
+	for _, list := range d.state.Lists {
+		if list.ID == d.task.ListID {
+			var items []ui.PickerItem
+			for _, s := range list.Statuses {
+				items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})
+			}
+			return items
+		}
+	}
+	// Fall back to space-level statuses
 	var items []ui.PickerItem
 	for _, s := range d.state.Statuses {
 		items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})

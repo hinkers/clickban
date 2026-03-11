@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nhinkley/clickban/internal/config"
+	"github.com/hinkers/clickban/internal/config"
 )
 
 func TestLoad_RequiresAPIToken(t *testing.T) {

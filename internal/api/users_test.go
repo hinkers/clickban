@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/nhinkley/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/api"
 )
 
 func TestGetCurrentUser(t *testing.T) {
@@ -43,14 +43,20 @@ func TestGetCurrentUser(t *testing.T) {
 
 func TestGetWorkspaceMembers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/team/team1/member" {
-			t.Errorf("expected path /team/team1/member, got %s", r.URL.Path)
+		if r.URL.Path != "/team" {
+			t.Errorf("expected path /team, got %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"members": []map[string]interface{}{
-				{"user": map[string]interface{}{"id": 1, "username": "alice"}},
-				{"user": map[string]interface{}{"id": 2, "username": "bob"}},
+			"teams": []map[string]interface{}{
+				{
+					"id":   "team1",
+					"name": "My Workspace",
+					"members": []map[string]interface{}{
+						{"user": map[string]interface{}{"id": 1, "username": "alice"}},
+						{"user": map[string]interface{}{"id": 2, "username": "bob"}},
+					},
+				},
 			},
 		})
 	}))

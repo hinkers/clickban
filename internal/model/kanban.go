@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
-	"github.com/nhinkley/clickban/internal/ui"
+	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/ui"
 )
 
 // KanbanColumn groups tasks under a single status.
@@ -21,10 +21,12 @@ type KanbanColumn struct {
 type Kanban struct {
 	state       AppState
 	columns     []KanbanColumn
-	colIndex    int // active column
-	rowIndex    int // active card within column
-	colOffset   int // horizontal scroll offset
-	moveMode    bool
+	allColumns  []KanbanColumn // includes closed columns
+	colIndex    int            // active column
+	rowIndex    int            // active card within column
+	colOffset   int            // horizontal scroll offset
+	showClosed  bool
+	movePicker  *ui.Picker // status picker for moving cards
 	wantsDetail *api.Task
 	width       int
 	height      int
@@ -33,7 +35,16 @@ type Kanban struct {
 // NewKanban creates a Kanban from the given app state.
 func NewKanban(state AppState) Kanban {
 	k := Kanban{state: state}
-	k.columns = buildColumns(state)
+	k.allColumns = buildColumns(state)
+	k.columns = filterColumns(k.allColumns, k.showClosed)
+	return k
+}
+
+// NewKanbanWithClosed creates a Kanban preserving the showClosed state.
+func NewKanbanWithClosed(state AppState, showClosed bool) Kanban {
+	k := NewKanban(state)
+	k.showClosed = showClosed
+	k.columns = filterColumns(k.allColumns, k.showClosed)
 	return k
 }
 
@@ -62,6 +73,29 @@ func (k *Kanban) WantsDetail() *api.Task {
 	return k.wantsDetail
 }
 
+// statusItemsForTask returns picker items using the task's list statuses.
+func (k *Kanban) statusItemsForTask(task api.Task) []ui.PickerItem {
+	for _, list := range k.state.Lists {
+		if list.ID == task.ListID {
+			var items []ui.PickerItem
+			for _, s := range list.Statuses {
+				items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})
+			}
+			return items
+		}
+	}
+	var items []ui.PickerItem
+	for _, s := range k.state.Statuses {
+		items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})
+	}
+	return items
+}
+
+// HasOverlay returns true if a picker overlay is active.
+func (k *Kanban) HasOverlay() bool {
+	return k.movePicker != nil
+}
+
 // ClearWantsDetail clears the pending detail request.
 func (k *Kanban) ClearWantsDetail() {
 	k.wantsDetail = nil
@@ -70,11 +104,24 @@ func (k *Kanban) ClearWantsDetail() {
 // Update implements tea.Model.
 func (k Kanban) Update(msg tea.Msg) (Kanban, tea.Cmd) {
 	switch msg := msg.(type) {
+	case ui.PickerResult:
+		return k.handleMoveResult(msg)
 	case tea.KeyMsg:
-		if k.moveMode {
-			return k.updateMoveMode(msg)
+		if k.movePicker != nil {
+			p := *k.movePicker
+			m, cmd := p.Update(msg)
+			pp := m.(ui.Picker)
+			k.movePicker = &pp
+			return k, cmd
 		}
 		return k.updateNormal(msg)
+	}
+	if k.movePicker != nil {
+		p := *k.movePicker
+		m, cmd := p.Update(msg)
+		pp := m.(ui.Picker)
+		k.movePicker = &pp
+		return k, cmd
 	}
 	return k, nil
 }
@@ -105,10 +152,19 @@ func (k Kanban) updateNormal(msg tea.KeyMsg) (Kanban, tea.Cmd) {
 			k.rowIndex--
 		}
 	case "m":
-		// enter move-card mode
-		if k.SelectedTask() != nil {
-			k.moveMode = true
+		if task := k.SelectedTask(); task != nil {
+			items := k.statusItemsForTask(*task)
+			p := ui.NewPicker("Move to Status", items, false)
+			k.movePicker = &p
 		}
+	case "x":
+		k.showClosed = !k.showClosed
+		k.columns = filterColumns(k.allColumns, k.showClosed)
+		if k.colIndex >= len(k.columns) {
+			k.colIndex = len(k.columns) - 1
+		}
+		k.rowIndex = 0
+		k.ensureVisible()
 	case "enter":
 		if t := k.SelectedTask(); t != nil {
 			k.wantsDetail = t
@@ -117,40 +173,30 @@ func (k Kanban) updateNormal(msg tea.KeyMsg) (Kanban, tea.Cmd) {
 	return k, nil
 }
 
-func (k Kanban) updateMoveMode(msg tea.KeyMsg) (Kanban, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		k.moveMode = false
-	case "h", "left":
-		if k.colIndex > 0 {
-			return k.moveCard(k.colIndex - 1)
-		}
-	case "l", "right":
-		if k.colIndex < len(k.columns)-1 {
-			return k.moveCard(k.colIndex + 1)
-		}
-	default:
-		// 1-9 to jump to column by number
-		if len(msg.String()) == 1 && msg.String() >= "1" && msg.String() <= "9" {
-			target := int(msg.String()[0]-'1')
-			if target < len(k.columns) {
-				return k.moveCard(target)
-			}
-		}
-	}
-	return k, nil
-}
-
-func (k Kanban) moveCard(targetCol int) (Kanban, tea.Cmd) {
-	task := k.SelectedTask()
-	if task == nil {
-		k.moveMode = false
+func (k Kanban) handleMoveResult(res ui.PickerResult) (Kanban, tea.Cmd) {
+	k.movePicker = nil
+	if res.Cancelled || len(res.Selected) == 0 {
 		return k, nil
 	}
 
-	newStatus := k.columns[targetCol].Status
+	task := k.SelectedTask()
+	if task == nil {
+		return k, nil
+	}
 
-	// Optimistic local update: remove from current column, add to target
+	newStatusID := res.Selected[0].ID
+	newStatusName := res.Selected[0].Label
+
+	// Find the target column
+	targetCol := -1
+	for i, col := range k.columns {
+		if strings.EqualFold(col.Status.Status, newStatusName) {
+			targetCol = i
+			break
+		}
+	}
+
+	// Optimistic local update
 	srcCol := k.colIndex
 	var srcTasks []api.Task
 	for _, t := range k.columns[srcCol].Tasks {
@@ -164,23 +210,20 @@ func (k Kanban) moveCard(targetCol int) (Kanban, tea.Cmd) {
 	}
 
 	updatedTask := *task
-	updatedTask.Status = newStatus
-	k.columns[targetCol].Tasks = append(k.columns[targetCol].Tasks, updatedTask)
-	k.moveMode = false
-
-	// API call
-	statusStr := newStatus.Status
-	updateReq := &api.UpdateTaskRequest{
-		Status: &statusStr,
+	updatedTask.Status = api.Status{ID: newStatusID, Status: newStatusName}
+	if targetCol >= 0 {
+		k.columns[targetCol].Tasks = append(k.columns[targetCol].Tasks, updatedTask)
 	}
+
+	// API call — ClickUp expects lowercase status names
 	client := k.state.Client
 	taskID := task.ID
-
+	statusLower := strings.ToLower(newStatusName)
 	return k, func() tea.Msg {
-		if err := client.UpdateTask(taskID, updateReq); err != nil {
+		if err := client.UpdateTask(taskID, &api.UpdateTaskRequest{Status: &statusLower}); err != nil {
 			return StatusMsg{Text: fmt.Sprintf("move failed: %v", err)}
 		}
-		return StatusMsg{Text: fmt.Sprintf("Moved to %s", newStatus.Status)}
+		return StatusMsg{Text: fmt.Sprintf("Moved to %s", newStatusName)}
 	}
 }
 
@@ -270,7 +313,38 @@ func (k Kanban) View() string {
 	bindings := k.keyBindings()
 	footer := ui.RenderFooter(bindings, k.width)
 
-	return lipgloss.JoinVertical(lipgloss.Left, board, footer)
+	result := lipgloss.JoinVertical(lipgloss.Left, board, footer)
+
+	// Overlay picker for move
+	if k.movePicker != nil {
+		overlayContent := k.movePicker.View()
+		overlayStyle := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ui.ColorBlue).
+			Background(ui.ColorCardBg).
+			Padding(1, 2).
+			Width(40)
+		overlayBox := overlayStyle.Render(overlayContent)
+
+		ovH := lipgloss.Height(overlayBox)
+		ovW := lipgloss.Width(overlayBox)
+		topPad := (boardH - ovH) / 2
+		leftPad := (k.width - ovW) / 2
+		if topPad < 0 {
+			topPad = 0
+		}
+		if leftPad < 0 {
+			leftPad = 0
+		}
+		leftStr := strings.Repeat(" ", leftPad)
+		lines := strings.Split(overlayBox, "\n")
+		for i, line := range lines {
+			lines[i] = leftStr + line
+		}
+		result = strings.Repeat("\n", topPad) + strings.Join(lines, "\n")
+	}
+
+	return result
 }
 
 func (k Kanban) renderColumn(col KanbanColumn, colIdx, width, height int) string {
@@ -301,15 +375,9 @@ func (k Kanban) renderColumn(col KanbanColumn, colIdx, width, height int) string
 
 	content := strings.Join(cards, "\n")
 
-	// Mark move target columns when in move mode
 	borderStyle := ui.BorderStyle
 	if active {
 		borderStyle = ui.ActiveBorderStyle
-	}
-	if k.moveMode && !active {
-		borderStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ui.ColorYellow)
 	}
 
 	return borderStyle.
@@ -319,66 +387,90 @@ func (k Kanban) renderColumn(col KanbanColumn, colIdx, width, height int) string
 }
 
 func (k Kanban) keyBindings() []ui.KeyBinding {
-	if k.moveMode {
-		return []ui.KeyBinding{
-			{Key: "h/l", Label: "move left/right"},
-			{Key: "1-9", Label: "move to column"},
-			{Key: "esc", Label: "cancel"},
-		}
-	}
 	return []ui.KeyBinding{
 		{Key: "h/l", Label: "switch column"},
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
 		{Key: "m", Label: "move card"},
+		{Key: "x", Label: "toggle done"},
 		{Key: "1/2", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 	}
 }
 
-// buildColumns creates sorted columns from the tasks in the state.
+// isClosedStatus returns true if the status type indicates completion.
+func isClosedStatus(s api.Status) bool {
+	t := strings.ToLower(s.Type)
+	return t == "closed" || t == "done"
+}
+
+// filterColumns returns columns filtered by showClosed.
+func filterColumns(all []KanbanColumn, showClosed bool) []KanbanColumn {
+	if showClosed {
+		return all
+	}
+	var filtered []KanbanColumn
+	for _, col := range all {
+		if !isClosedStatus(col.Status) {
+			filtered = append(filtered, col)
+		}
+	}
+	return filtered
+}
+
+// buildColumns creates sorted columns from the tasks in the state,
+// merging statuses that share the same name (case-insensitive).
 func buildColumns(state AppState) []KanbanColumn {
-	// Build a map of status.ID -> column
-	colMap := make(map[string]*KanbanColumn)
-	statusOrder := make(map[string]int)
+	// Merge statuses by lowercase name. Use the first occurrence for display.
+	type mergedCol struct {
+		status api.Status
+		tasks  []api.Task
+		order  int
+	}
 
-	for i, s := range state.Statuses {
-		statusOrder[s.ID] = i
-		if _, ok := colMap[s.ID]; !ok {
-			sc := s
-			colMap[s.ID] = &KanbanColumn{Status: sc}
+	colByName := make(map[string]*mergedCol)
+	nameOrder := 0
+
+	// Register all known statuses first (preserves ordering)
+	for _, s := range state.Statuses {
+		key := strings.ToLower(s.Status)
+		if _, ok := colByName[key]; !ok {
+			colByName[key] = &mergedCol{status: s, order: nameOrder}
+			nameOrder++
 		}
 	}
 
+	// Map status IDs to their merged column name
+	idToName := make(map[string]string)
+	for _, s := range state.Statuses {
+		idToName[s.ID] = strings.ToLower(s.Status)
+	}
+
+	// Place tasks into merged columns
 	for _, task := range state.Tasks {
-		id := task.Status.ID
-		if _, ok := colMap[id]; !ok {
-			// status not in space statuses — add it
-			colMap[id] = &KanbanColumn{Status: task.Status}
+		key, ok := idToName[task.Status.ID]
+		if !ok {
+			key = strings.ToLower(task.Status.Status)
 		}
-		col := colMap[id]
-		col.Tasks = append(col.Tasks, task)
+		mc, ok := colByName[key]
+		if !ok {
+			mc = &mergedCol{status: task.Status, order: nameOrder}
+			colByName[key] = mc
+			nameOrder++
+		}
+		mc.tasks = append(mc.tasks, task)
 	}
 
-	// Sort columns by status order index
+	// Sort columns by their original order
 	var cols []KanbanColumn
-	for _, col := range colMap {
-		cols = append(cols, *col)
+	for _, mc := range colByName {
+		cols = append(cols, KanbanColumn{Status: mc.status, Tasks: mc.tasks})
 	}
 	sort.Slice(cols, func(i, j int) bool {
-		oi, oiOk := statusOrder[cols[i].Status.ID]
-		oj, ojOk := statusOrder[cols[j].Status.ID]
-		if oiOk && ojOk {
-			return oi < oj
-		}
-		if oiOk {
-			return true
-		}
-		if ojOk {
-			return false
-		}
-		return cols[i].Status.OrderIndex < cols[j].Status.OrderIndex
+		ki := strings.ToLower(cols[i].Status.Status)
+		kj := strings.ToLower(cols[j].Status.Status)
+		return colByName[ki].order < colByName[kj].order
 	})
 
 	return cols

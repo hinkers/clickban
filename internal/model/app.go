@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
-	"github.com/nhinkley/clickban/internal/ui"
+	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/ui"
 )
 
 // ViewMode represents which top-level view is active.
@@ -28,6 +28,7 @@ type AppState struct {
 	Members     []api.Member
 	TaskTypes   []api.CustomItem
 	Statuses    []api.Status
+	Lists       []api.List
 	Tasks       []api.Task
 }
 
@@ -104,7 +105,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.state = msg.State
 		a.loading = false
-		a.kanban = NewKanban(a.state).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 		a.statusText = ""
 
@@ -119,7 +120,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		a.kanban = NewKanban(a.state).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 
 	case tea.KeyMsg:
@@ -138,6 +139,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.loading = true
 				return a, loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
 			case "enter":
+				// Don't intercept enter when kanban has an overlay
+				if a.view == ViewKanban && a.kanban.HasOverlay() {
+					break
+				}
 				// Open detail view for selected task
 				var task *api.Task
 				if a.view == ViewKanban {
@@ -149,6 +154,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.detailFrom = a.view
 					a.detail = NewDetail(*task, a.state).Resize(a.width, a.height)
 					a.view = ViewDetail
+					return a, a.detail.Init()
 				}
 				return a, nil
 			}
@@ -179,6 +185,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
 				a.view = ViewDetail
 				a.kanban.ClearWantsDetail()
+				return a, a.detail.Init()
 			}
 			return a, cmd
 
@@ -190,6 +197,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
 				a.view = ViewDetail
 				a.myTasks.ClearWantsDetail()
+				return a, a.detail.Init()
 			}
 			return a, cmd
 
@@ -205,7 +213,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							break
 						}
 					}
-					a.kanban = NewKanban(a.state).Resize(a.width, a.height)
+					a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
 					a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 				}
 				a.view = a.detailFrom
@@ -334,6 +342,8 @@ func loadData(client *api.Client, teamID, spaceID string) tea.Cmd {
 		if err != nil {
 			return DataLoadedMsg{Err: fmt.Errorf("get lists: %w", err)}
 		}
+
+		state.Lists = lists
 
 		// Gather statuses from lists too
 		statusSeen := make(map[string]bool)

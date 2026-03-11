@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nhinkley/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/api"
 )
 
 // FormatDuration converts milliseconds to a human-readable duration string.
