@@ -117,11 +117,11 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 			}
 			listLabel := weeklyListName(state, task.List.ID)
 			if listLabel != "" {
-				listLabel = dimStyle.Render(" [" + listLabel + "]")
+				listLabel = dimStyle.Render("[" + listLabel + "] ")
 			}
 			sb.WriteString(fmt.Sprintf("  %s%s  %s\n",
-				nameStyle.Render(task.Name),
 				listLabel,
+				nameStyle.Render(task.Name),
 				dimStyle.Render(closedStr)))
 		}
 	}
@@ -167,12 +167,12 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 
 			listLabel := weeklyListName(state, task.List.ID)
 			if listLabel != "" {
-				listLabel = dimStyle.Render(" [" + listLabel + "]")
+				listLabel = dimStyle.Render("[" + listLabel + "] ")
 			}
 			sb.WriteString(fmt.Sprintf("    %s%s%s%s\n",
 				priLabel,
-				nameStyle.Render(task.Name),
 				listLabel,
+				nameStyle.Render(task.Name),
 				dueFlag))
 		}
 	}
