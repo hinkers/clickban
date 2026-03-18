@@ -15,9 +15,10 @@ import (
 type ViewMode int
 
 const (
-	ViewKanban  ViewMode = iota
-	ViewMyTasks          // 1
-	ViewDetail           // 2
+	ViewToday   ViewMode = iota // 0
+	ViewKanban                  // 1
+	ViewMyTasks                 // 2
+	ViewDetail                  // 3
 )
 
 // AppState holds shared data available to all views.
@@ -64,10 +65,12 @@ type StatusMsg struct {
 type App struct {
 	state       AppState
 	view        ViewMode
+	today       Today
 	kanban      Kanban
 	myTasks     MyTasks
 	detail      Detail
 	detailFrom  ViewMode // which view we came from
+	cache       *cache.Cache
 	loading     bool
 	statusText  string
 	width       int
@@ -83,7 +86,7 @@ func NewApp(client *api.Client, teamID, spaceID string) App {
 			TeamID:  teamID,
 			SpaceID: spaceID,
 		},
-		view:    ViewKanban,
+		view:    ViewToday,
 		loading: true,
 	}
 }
@@ -124,6 +127,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		a.ready = true
 		if !a.loading {
+			a.today = a.today.Resize(a.width, a.height)
 			a.kanban = a.kanban.Resize(a.width, a.height)
 			a.myTasks = a.myTasks.Resize(a.width, a.height)
 			if a.view == ViewDetail {
@@ -139,8 +143,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.state = msg.State
 		a.loading = false
+		if a.cache == nil {
+			if c, err := cache.Open(); err == nil {
+				a.cache = c
+			}
+		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		if a.today.calculated {
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+		} else {
+			a.today = NewToday(a.state, a.cache).Resize(a.width, a.height)
+		}
 		a.statusText = ""
 		if msg.FromCache {
 			a.statusText = "Loaded from cache, refreshing…"
@@ -160,6 +174,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 
 	case tea.KeyMsg:
 		// Global keys when not in detail view
@@ -167,6 +182,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return a, tea.Quit
+			case "0", "t":
+				if a.view != ViewDetail {
+					a.view = ViewToday
+				}
+				return a, nil
 			case "1":
 				a.view = ViewKanban
 				return a, nil
@@ -177,13 +197,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.loading = true
 				return a, loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
 			case "enter":
-				// Don't intercept enter when kanban has an overlay
+				// Don't intercept enter when an overlay is active
 				if a.view == ViewKanban && a.kanban.HasOverlay() {
+					break
+				}
+				if a.view == ViewToday && a.today.HasOverlay() {
 					break
 				}
 				// Open detail view for selected task
 				var task *api.Task
-				if a.view == ViewKanban {
+				if a.view == ViewToday {
+					task = a.today.SelectedTask()
+				} else if a.view == ViewKanban {
 					task = a.kanban.SelectedTask()
 				} else if a.view == ViewMyTasks {
 					task = a.myTasks.SelectedTask()
@@ -215,6 +240,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Delegate updates to the active sub-model
 	if !a.loading && a.ready {
 		switch a.view {
+		case ViewToday:
+			newToday, cmd := a.today.Update(msg)
+			a.today = newToday
+			if sel := a.today.WantsDetail(); sel != nil {
+				a.detailFrom = ViewToday
+				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
+				a.view = ViewDetail
+				a.today.ClearWantsDetail()
+				return a, a.detail.Init()
+			}
+			return a, cmd
+
 		case ViewKanban:
 			newKanban, cmd := a.kanban.Update(msg)
 			a.kanban = newKanban
@@ -268,6 +305,8 @@ func (a App) View() string {
 
 	var content string
 	switch a.view {
+	case ViewToday:
+		content = a.today.View()
 	case ViewKanban:
 		content = a.kanban.View()
 	case ViewMyTasks:
@@ -277,7 +316,7 @@ func (a App) View() string {
 	}
 
 	// Status bar at top
-	header := renderHeader(a.view, a.statusText, a.width)
+	header := renderHeader(a.view, a.statusText, a.validationCount(), a.width)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, content)
 }
@@ -293,11 +332,33 @@ func (a *App) propagateDetailUpdates() {
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 	}
 }
 
-func renderHeader(view ViewMode, statusText string, width int) string {
-	tabs := []string{"[1] Kanban", "[2] My Tasks"}
+// validationCount returns the number of assigned, non-closed tasks that need data.
+func (a *App) validationCount() int {
+	count := 0
+	for _, t := range a.state.Tasks {
+		if isClosedStatus(t.Status) {
+			continue
+		}
+		assigned := false
+		for _, u := range t.Assignees {
+			if a.state.CurrentUser != nil && u.ID == a.state.CurrentUser.ID {
+				assigned = true
+				break
+			}
+		}
+		if assigned && taskNeedsData(t) {
+			count++
+		}
+	}
+	return count
+}
+
+func renderHeader(view ViewMode, statusText string, validationCount int, width int) string {
+	tabs := []string{"[0] Today", "[1] Kanban", "[2] My Tasks"}
 	var parts []string
 	for i, tab := range tabs {
 		mode := ViewMode(i)
@@ -320,6 +381,11 @@ func renderHeader(view ViewMode, statusText string, width int) string {
 		status = lipgloss.NewStyle().
 			Foreground(ui.ColorYellow).
 			Render("  " + statusText)
+	}
+
+	validationWarning := ui.RenderValidationWarning(validationCount)
+	if validationWarning != "" {
+		status += "  " + validationWarning
 	}
 
 	right := fmt.Sprintf("q:quit  r:refresh")
