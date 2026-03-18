@@ -126,6 +126,7 @@ func (k *Kanban) FocusTask(taskID string) {
 			if t.ID == taskID {
 				k.colIndex = ci
 				k.rowIndex = ri
+				k.ensureVisible()
 				return
 			}
 		}
