@@ -12,9 +12,18 @@ import (
 )
 
 // isClosedStatus returns true if the status type indicates a closed/done task.
+// Checks both the Type field and the status name as a fallback.
 func isClosedStatus(s api.Status) bool {
 	t := strings.ToLower(s.Type)
-	return t == "closed" || t == "done"
+	if t == "closed" || t == "done" {
+		return true
+	}
+	// Fallback: check status name if type is empty
+	if t == "" {
+		n := strings.ToLower(s.Status)
+		return n == "complete" || n == "completed" || n == "closed" || n == "cancelled" || n == "done"
+	}
+	return false
 }
 
 // priorityRank returns a numeric rank for sorting (lower = higher priority).
