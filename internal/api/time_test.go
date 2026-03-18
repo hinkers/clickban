@@ -38,8 +38,8 @@ func TestGetTimeEntries(t *testing.T) {
 
 func TestCreateTimeEntry(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/task/t1/time" {
-			t.Errorf("expected path /task/t1/time, got %s", r.URL.Path)
+		if r.URL.Path != "/team/team1/time_entries" {
+			t.Errorf("expected path /team/team1/time_entries, got %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -49,18 +49,20 @@ func TestCreateTimeEntry(t *testing.T) {
 		if body["duration"] == nil {
 			t.Error("expected duration in request body")
 		}
+		if body["tid"] == nil {
+			t.Error("expected tid in request body")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"data": map[string]interface{}{"id": "te2"}})
 	}))
 	defer server.Close()
 
 	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
-	start := int64(1000000)
 	req := &api.CreateTimeEntryRequest{
-		Start:    &start,
 		Duration: 3600000,
+		TaskID:   "t1",
 	}
-	err := client.CreateTimeEntry("t1", req)
+	err := client.CreateTimeEntry("team1", req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

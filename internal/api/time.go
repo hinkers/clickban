@@ -10,9 +10,9 @@ func (c *Client) GetTimeEntries(taskID string) ([]TimeEntry, error) {
 	return resp.Data, nil
 }
 
-func (c *Client) CreateTimeEntry(taskID string, req *CreateTimeEntryRequest) error {
-	if err := c.Post(fmt.Sprintf("/task/%s/time", taskID), req, nil); err != nil {
-		return fmt.Errorf("create time entry for task %s: %w", taskID, err)
+func (c *Client) CreateTimeEntry(teamID string, req *CreateTimeEntryRequest) error {
+	if err := c.Post(fmt.Sprintf("/team/%s/time_entries", teamID), req, nil); err != nil {
+		return fmt.Errorf("create time entry for task %s: %w", req.TaskID, err)
 	}
 	return nil
 }

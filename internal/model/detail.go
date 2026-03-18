@@ -532,9 +532,9 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 
 	client := d.state.Client
 	taskID := d.task.ID
+	teamID := d.state.TeamID
 
 	if res.Mode == ui.TimerModeLive {
-		teamID := d.state.TeamID
 		if res.Action == "start" {
 			return d, func() tea.Msg {
 				if err := client.StartTimer(teamID, taskID); err != nil {
@@ -558,7 +558,7 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 				Duration: ms,
 				TaskID:   taskID,
 			}
-			if err := client.CreateTimeEntry(taskID, req); err != nil {
+			if err := client.CreateTimeEntry(teamID, req); err != nil {
 				return StatusMsg{Text: "time entry failed: " + err.Error()}
 			}
 			return StatusMsg{Text: fmt.Sprintf("Logged %s", ui.FormatDuration(ms))}
@@ -578,7 +578,7 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 			Duration: durationMs,
 			TaskID:   taskID,
 		}
-		if err := client.CreateTimeEntry(taskID, req); err != nil {
+		if err := client.CreateTimeEntry(teamID, req); err != nil {
 			return StatusMsg{Text: "time entry failed: " + err.Error()}
 		}
 		return StatusMsg{Text: fmt.Sprintf("Logged %s", ui.FormatDuration(durationMs))}
