@@ -38,8 +38,8 @@ When over capacity: `⚠ {filled}h / 7.0h — over capacity by {excess}h`
 
 | Key | Action |
 |-----|--------|
-| `c` | Calculate today's list (run algorithm) |
-| `f` | Force-add a task (opens picker of assigned tasks not on list) |
+| `c` | Calculate today's list (run algorithm). Note: `c` means "add comment" in the detail view — keybinds are view-scoped, not global. |
+| `f` | Force-add a task (opens `ui.Picker` showing assigned, non-closed tasks not already on today's list, sorted by priority then due date) |
 | `i` | Ignore selected task for today (remove from list) |
 | `d` | Done for today (mark as handled, keep in ClickUp) |
 | `enter` | Open task detail view |
@@ -49,7 +49,7 @@ When over capacity: `⚠ {filled}h / 7.0h — over capacity by {excess}h`
 
 Triggered by pressing `c` on the Today view. Steps:
 
-1. Start with all tasks assigned to current user that are not in a closed/done status.
+1. Start with all tasks assigned to current user that are not in a closed/done status (reuse `isClosedStatus()` from `kanban.go`, which checks `Status.Type` for "closed" or "done").
 2. Remove tasks marked as "ignored" for today.
 3. Include any tasks marked as "forced" unconditionally.
 4. Sort remaining tasks:
@@ -70,7 +70,7 @@ Tasks with large time estimates that span multiple days are handled naturally:
 
 ## Today State Persistence (SQLite)
 
-Extend the existing SQLite cache database at `~/.cache/clickban/clickban.db`.
+Extend the existing SQLite cache database at `~/.cache/clickban/clickban.db`. The `today_state` table is created in `cache.Open()` alongside the existing `cache` table.
 
 ### Schema
 
@@ -143,6 +143,12 @@ The `ViewMode` enum shifts:
 - `ViewMyTasks = 2` (was 1)
 - `ViewDetail = 3` (was 2)
 
+The `renderHeader` function in `app.go` must be refactored — the tab bar currently hard-codes `["[1] Kanban", "[2] My Tasks"]` with index-based matching. Update to `["[0] Today", "[1] Kanban", "[2] My Tasks"]` with corrected `ViewMode` mapping.
+
+### Refresh Interaction
+
+When `r` (global refresh) is pressed, the Today list rebuilds from the refreshed task data while preserving forced/ignored/done_for_day state from SQLite. The `DataLoadedMsg` handler in `app.go` must reconstruct the Today model using both the new `AppState` and the persisted `today_state` rows.
+
 ## Data Requirements
 
 ### Already Available
@@ -150,7 +156,7 @@ The `ViewMode` enum shifts:
 - `Task.Priority` — priority struct with level name
 - `Task.TimeEstimate` — int64 milliseconds
 - `Task.TimeSpent` — int64 milliseconds (from task list endpoint)
-- `Task.DueDate` — string timestamp
+- `Task.DueDate` — string containing Unix timestamp in milliseconds (e.g., `"1711324800000"`). Must be parsed with `strconv.ParseInt` and converted via `time.UnixMilli()`. Compare against current day boundaries (start/end of today in local time) for due-today/overdue classification. The `formatTimestamp` helper in `ui/preview.go` already handles this conversion for display.
 - `Task.Assignees` — user list
 - `Task.Status` — current status
 - `AppState.CurrentUser` — for filtering "my" tasks
