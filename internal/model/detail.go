@@ -167,7 +167,7 @@ func (d Detail) delegateToOverlay(msg tea.Msg) (Detail, tea.Cmd) {
 		m, cmd := d.picker.Update(msg)
 		d.picker = m.(ui.Picker)
 		return d, cmd
-	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
+	case OverlayTitle, OverlayDescription, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
 		m, cmd := d.editor.Update(msg)
 		d.editor = m.(ui.Editor)
 		return d, cmd
