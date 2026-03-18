@@ -558,8 +558,8 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 			startMs := now.Add(-time.Duration(ms) * time.Millisecond).UnixMilli()
 			endMs := now.UnixMilli()
 			req := &api.CreateTimeEntryRequest{
-				Start:    &startMs,
-				End:      &endMs,
+				Start:    startMs,
+				End:      endMs,
 				Duration: ms,
 				TaskID:   taskID,
 			}
@@ -574,12 +574,10 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	start := res.Start
 	end := res.End
 	durationMs := end.Sub(start).Milliseconds()
-	startMs := start.UnixMilli()
-	endMs := end.UnixMilli()
 	return d, func() tea.Msg {
 		req := &api.CreateTimeEntryRequest{
-			Start:    &startMs,
-			End:      &endMs,
+			Start:    start.UnixMilli(),
+			End:      end.UnixMilli(),
 			Duration: durationMs,
 			TaskID:   taskID,
 		}

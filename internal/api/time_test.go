@@ -59,6 +59,7 @@ func TestCreateTimeEntry(t *testing.T) {
 
 	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
 	req := &api.CreateTimeEntryRequest{
+		Start:    1000000,
 		Duration: 3600000,
 		TaskID:   "t1",
 	}
