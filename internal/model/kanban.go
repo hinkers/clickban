@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,49 @@ import (
 	"github.com/hinkers/clickban/internal/api"
 	"github.com/hinkers/clickban/internal/ui"
 )
+
+// SortMode controls how tasks within columns are sorted.
+type SortMode int
+
+const (
+	SortDefault       SortMode = iota
+	SortCreatedDesc            // newest first
+	SortCreatedAsc             // oldest first
+	SortUpdatedDesc            // recently updated first
+	SortUpdatedAsc             // least recently updated first
+	SortAlphaAsc               // A-Z
+	SortAlphaDesc              // Z-A
+	sortModeCount              // sentinel for cycling
+)
+
+func (s SortMode) String() string {
+	switch s {
+	case SortCreatedDesc:
+		return "Created ↓"
+	case SortCreatedAsc:
+		return "Created ↑"
+	case SortUpdatedDesc:
+		return "Updated ↓"
+	case SortUpdatedAsc:
+		return "Updated ↑"
+	case SortAlphaAsc:
+		return "Name A-Z"
+	case SortAlphaDesc:
+		return "Name Z-A"
+	default:
+		return "Default"
+	}
+}
+
+var sortPickerItems = []ui.PickerItem{
+	{ID: "0", Label: "Default"},
+	{ID: "1", Label: "Created (newest first)"},
+	{ID: "2", Label: "Created (oldest first)"},
+	{ID: "3", Label: "Updated (newest first)"},
+	{ID: "4", Label: "Updated (oldest first)"},
+	{ID: "5", Label: "Name A-Z"},
+	{ID: "6", Label: "Name Z-A"},
+}
 
 // KanbanColumn groups tasks under a single status.
 type KanbanColumn struct {
@@ -25,7 +69,10 @@ type Kanban struct {
 	colIndex    int            // active column
 	rowIndex    int            // active card within column
 	colOffset   int            // horizontal scroll offset
+	rowOffset   int            // vertical scroll offset within active column
 	showClosed  bool
+	sortMode    SortMode
+	sortPicker  *ui.Picker
 	movePicker  *ui.Picker // status picker for moving cards
 	wantsDetail *api.Task
 	width       int
@@ -40,11 +87,15 @@ func NewKanban(state AppState) Kanban {
 	return k
 }
 
-// NewKanbanWithClosed creates a Kanban preserving the showClosed state.
-func NewKanbanWithClosed(state AppState, showClosed bool) Kanban {
+// NewKanbanWithOptions creates a Kanban preserving display options.
+func NewKanbanWithOptions(state AppState, showClosed bool, sortMode SortMode) Kanban {
 	k := NewKanban(state)
 	k.showClosed = showClosed
+	k.sortMode = sortMode
 	k.columns = filterColumns(k.allColumns, k.showClosed)
+	if sortMode != SortDefault {
+		k.sortColumns()
+	}
 	return k
 }
 
@@ -93,7 +144,16 @@ func (k *Kanban) statusItemsForTask(task api.Task) []ui.PickerItem {
 
 // HasOverlay returns true if a picker overlay is active.
 func (k *Kanban) HasOverlay() bool {
-	return k.movePicker != nil
+	return k.movePicker != nil || k.sortPicker != nil
+}
+
+func (k *Kanban) listName(listID string) string {
+	for _, l := range k.state.Lists {
+		if l.ID == listID {
+			return l.Name
+		}
+	}
+	return ""
 }
 
 // ClearWantsDetail clears the pending detail request.
@@ -101,26 +161,40 @@ func (k *Kanban) ClearWantsDetail() {
 	k.wantsDetail = nil
 }
 
+// activePicker returns whichever picker is currently open, or nil.
+func (k *Kanban) activePicker() **ui.Picker {
+	if k.movePicker != nil {
+		return &k.movePicker
+	}
+	if k.sortPicker != nil {
+		return &k.sortPicker
+	}
+	return nil
+}
+
 // Update implements tea.Model.
 func (k Kanban) Update(msg tea.Msg) (Kanban, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ui.PickerResult:
+		if k.sortPicker != nil {
+			return k.handleSortResult(msg)
+		}
 		return k.handleMoveResult(msg)
 	case tea.KeyMsg:
-		if k.movePicker != nil {
-			p := *k.movePicker
+		if pp := k.activePicker(); pp != nil {
+			p := **pp
 			m, cmd := p.Update(msg)
-			pp := m.(ui.Picker)
-			k.movePicker = &pp
+			np := m.(ui.Picker)
+			*pp = &np
 			return k, cmd
 		}
 		return k.updateNormal(msg)
 	}
-	if k.movePicker != nil {
-		p := *k.movePicker
+	if pp := k.activePicker(); pp != nil {
+		p := **pp
 		m, cmd := p.Update(msg)
-		pp := m.(ui.Picker)
-		k.movePicker = &pp
+		np := m.(ui.Picker)
+		*pp = &np
 		return k, cmd
 	}
 	return k, nil
@@ -132,12 +206,14 @@ func (k Kanban) updateNormal(msg tea.KeyMsg) (Kanban, tea.Cmd) {
 		if k.colIndex > 0 {
 			k.colIndex--
 			k.rowIndex = 0
+			k.rowOffset = 0
 			k.ensureVisible()
 		}
 	case "l", "right":
 		if k.colIndex < len(k.columns)-1 {
 			k.colIndex++
 			k.rowIndex = 0
+			k.rowOffset = 0
 			k.ensureVisible()
 		}
 	case "j", "down":
@@ -145,12 +221,25 @@ func (k Kanban) updateNormal(msg tea.KeyMsg) (Kanban, tea.Cmd) {
 			col := k.columns[k.colIndex]
 			if k.rowIndex < len(col.Tasks)-1 {
 				k.rowIndex++
+				visCount := k.visibleCardCount(k.rowOffset)
+				if visCount == 0 {
+					visCount = 1
+				}
+				if k.rowIndex >= k.rowOffset+visCount {
+					k.rowOffset = k.rowIndex - visCount + 1
+				}
 			}
 		}
 	case "k", "up":
 		if k.rowIndex > 0 {
 			k.rowIndex--
+			if k.rowIndex < k.rowOffset {
+				k.rowOffset = k.rowIndex
+			}
 		}
+	case "o":
+		p := ui.NewPicker("Sort By", sortPickerItems, false)
+		k.sortPicker = &p
 	case "m":
 		if task := k.SelectedTask(); task != nil {
 			items := k.statusItemsForTask(*task)
@@ -170,6 +259,17 @@ func (k Kanban) updateNormal(msg tea.KeyMsg) (Kanban, tea.Cmd) {
 			k.wantsDetail = t
 		}
 	}
+	return k, nil
+}
+
+func (k Kanban) handleSortResult(res ui.PickerResult) (Kanban, tea.Cmd) {
+	k.sortPicker = nil
+	if res.Cancelled || len(res.Selected) == 0 {
+		return k, nil
+	}
+	id, _ := strconv.Atoi(res.Selected[0].ID)
+	k.sortMode = SortMode(id)
+	k.sortColumns()
 	return k, nil
 }
 
@@ -224,6 +324,70 @@ func (k Kanban) handleMoveResult(res ui.PickerResult) (Kanban, tea.Cmd) {
 			return StatusMsg{Text: fmt.Sprintf("move failed: %v", err)}
 		}
 		return StatusMsg{Text: fmt.Sprintf("Moved to %s", newStatusName)}
+	}
+}
+
+// visibleCardCount returns how many cards fit starting from the given offset
+// in the active column.
+func (k Kanban) visibleCardCount(offset int) int {
+	if k.colIndex >= len(k.columns) {
+		return 0
+	}
+	col := k.columns[k.colIndex]
+	colW := k.columnWidth()
+	maxLines := k.height - 3 - 2 // boardH minus border
+	usedLines := 1               // header
+	if offset > 0 {
+		usedLines++ // scroll-up indicator
+	}
+	count := 0
+	for i := offset; i < len(col.Tasks); i++ {
+		card := ui.RenderCard(col.Tasks[i], colW, false)
+		cardLines := lipgloss.Height(card)
+		if usedLines+cardLines+1 > maxLines {
+			break
+		}
+		usedLines += cardLines
+		count++
+	}
+	return count
+}
+
+func (k *Kanban) sortColumns() {
+	for i := range k.columns {
+		k.sortColumnTasks(&k.columns[i])
+	}
+	for i := range k.allColumns {
+		k.sortColumnTasks(&k.allColumns[i])
+	}
+}
+
+func (k *Kanban) sortColumnTasks(col *KanbanColumn) {
+	switch k.sortMode {
+	case SortCreatedDesc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return col.Tasks[a].DateCreated > col.Tasks[b].DateCreated
+		})
+	case SortCreatedAsc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return col.Tasks[a].DateCreated < col.Tasks[b].DateCreated
+		})
+	case SortUpdatedDesc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return col.Tasks[a].DateUpdated > col.Tasks[b].DateUpdated
+		})
+	case SortUpdatedAsc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return col.Tasks[a].DateUpdated < col.Tasks[b].DateUpdated
+		})
+	case SortAlphaAsc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return strings.ToLower(col.Tasks[a].Name) < strings.ToLower(col.Tasks[b].Name)
+		})
+	case SortAlphaDesc:
+		sort.Slice(col.Tasks, func(a, b int) bool {
+			return strings.ToLower(col.Tasks[a].Name) > strings.ToLower(col.Tasks[b].Name)
+		})
 	}
 }
 
@@ -304,7 +468,7 @@ func (k Kanban) View() string {
 	if previewW > 0 {
 		task := k.SelectedTask()
 		if task != nil {
-			preview := ui.RenderPreview(*task, previewW, boardH)
+			preview := ui.RenderPreview(*task, previewW, boardH, k.listName(task.ListID))
 			board = lipgloss.JoinHorizontal(lipgloss.Top, board, preview)
 		}
 	}
@@ -315,9 +479,15 @@ func (k Kanban) View() string {
 
 	result := lipgloss.JoinVertical(lipgloss.Left, board, footer)
 
-	// Overlay picker for move
+	// Overlay picker
+	var activePicker *ui.Picker
 	if k.movePicker != nil {
-		overlayContent := k.movePicker.View()
+		activePicker = k.movePicker
+	} else if k.sortPicker != nil {
+		activePicker = k.sortPicker
+	}
+	if activePicker != nil {
+		overlayContent := activePicker.View()
 		overlayStyle := lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ui.ColorBlue).
@@ -362,15 +532,34 @@ func (k Kanban) renderColumn(col KanbanColumn, colIdx, width, height int) string
 
 	var cards []string
 	cards = append(cards, colHeader)
+	usedLines := 1 // header
+	maxLines := height - 2 // leave room for border
 
-	maxCards := height - 2
-	for i, task := range col.Tasks {
-		if i >= maxCards {
+	offset := 0
+	if active {
+		offset = k.rowOffset
+	}
+	if offset > 0 {
+		scrollUp := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(fmt.Sprintf("  ↑ %d more", offset))
+		cards = append(cards, scrollUp)
+		usedLines++
+	}
+	lastRendered := offset
+	for i := offset; i < len(col.Tasks); i++ {
+		selected := active && i == k.rowIndex
+		card := ui.RenderCard(col.Tasks[i], width, selected)
+		cardLines := lipgloss.Height(card)
+		if usedLines+cardLines+1 > maxLines { // +1 for potential scroll indicator
 			break
 		}
-		selected := active && i == k.rowIndex
-		card := ui.RenderCard(task, width, selected)
 		cards = append(cards, card)
+		usedLines += cardLines
+		lastRendered = i + 1
+	}
+	remaining := len(col.Tasks) - lastRendered
+	if remaining > 0 {
+		scrollDown := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(fmt.Sprintf("  ↓ %d more", remaining))
+		cards = append(cards, scrollDown)
 	}
 
 	content := strings.Join(cards, "\n")
@@ -392,6 +581,7 @@ func (k Kanban) keyBindings() []ui.KeyBinding {
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
 		{Key: "m", Label: "move card"},
+		{Key: "o", Label: "sort:" + k.sortMode.String()},
 		{Key: "x", Label: "toggle done"},
 		{Key: "1/2", Label: "switch view"},
 		{Key: "r", Label: "refresh"},

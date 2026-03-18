@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hinkers/clickban/internal/api"
+	"github.com/hinkers/clickban/internal/cache"
 	"github.com/hinkers/clickban/internal/ui"
 )
 
@@ -32,10 +33,21 @@ type AppState struct {
 	Tasks       []api.Task
 }
 
+// CachedState holds the serializable parts of AppState for caching.
+type CachedState struct {
+	CurrentUser *api.User        `json:"current_user"`
+	Members     []api.Member     `json:"members"`
+	TaskTypes   []api.CustomItem `json:"task_types"`
+	Statuses    []api.Status     `json:"statuses"`
+	Lists       []api.List       `json:"lists"`
+	Tasks       []api.Task       `json:"tasks"`
+}
+
 // DataLoadedMsg is sent when the initial data load completes.
 type DataLoadedMsg struct {
-	State AppState
-	Err   error
+	State    AppState
+	Err      error
+	FromCache bool
 }
 
 // TaskUpdatedMsg is sent when a task has been updated.
@@ -76,9 +88,31 @@ func NewApp(client *api.Client, teamID, spaceID string) App {
 	}
 }
 
-// Init implements tea.Model — kick off initial data load.
+// Init implements tea.Model — try cache first, then load from API.
 func (a App) Init() tea.Cmd {
-	return loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
+	return func() tea.Msg {
+		c, err := cache.Open()
+		if err == nil {
+			defer c.Close()
+			var cached CachedState
+			if ok, _ := c.Get("state:"+a.state.SpaceID, &cached); ok {
+				state := AppState{
+					Client:      a.state.Client,
+					TeamID:      a.state.TeamID,
+					SpaceID:     a.state.SpaceID,
+					CurrentUser: cached.CurrentUser,
+					Members:     cached.Members,
+					TaskTypes:   cached.TaskTypes,
+					Statuses:    cached.Statuses,
+					Lists:       cached.Lists,
+					Tasks:       cached.Tasks,
+				}
+				return DataLoadedMsg{State: state, FromCache: true}
+			}
+		}
+		// No cache — load from API directly
+		return loadDataSync(a.state.Client, a.state.TeamID, a.state.SpaceID)
+	}
 }
 
 // Update implements tea.Model.
@@ -105,9 +139,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.state = msg.State
 		a.loading = false
-		a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 		a.statusText = ""
+		if msg.FromCache {
+			a.statusText = "Loaded from cache, refreshing…"
+			return a, loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
+		}
 
 	case StatusMsg:
 		a.statusText = msg.Text
@@ -120,7 +158,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 
 	case tea.KeyMsg:
@@ -166,6 +204,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				// only quit if no overlay active
 				if !a.detail.HasOverlay() {
+					a.propagateDetailUpdates()
 					a.view = a.detailFrom
 					return a, nil
 				}
@@ -205,17 +244,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newDetail, cmd := a.detail.Update(msg)
 			a.detail = newDetail
 			if a.detail.WantsBack() {
-				// propagate any updates
-				if updated := a.detail.UpdatedTask(); updated != nil {
-					for i, t := range a.state.Tasks {
-						if t.ID == updated.ID {
-							a.state.Tasks[i] = *updated
-							break
-						}
-					}
-					a.kanban = NewKanbanWithClosed(a.state, a.kanban.showClosed).Resize(a.width, a.height)
-					a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
-				}
+				a.propagateDetailUpdates()
 				a.view = a.detailFrom
 				a.detail.ClearWantsBack()
 			}
@@ -251,6 +280,20 @@ func (a App) View() string {
 	header := renderHeader(a.view, a.statusText, a.width)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, content)
+}
+
+func (a *App) propagateDetailUpdates() {
+	if updated := a.detail.UpdatedTask(); updated != nil {
+		task := *updated
+		for i, t := range a.state.Tasks {
+			if t.ID == task.ID {
+				a.state.Tasks[i] = task
+				break
+			}
+		}
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
+		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+	}
 }
 
 func renderHeader(view ViewMode, statusText string, width int) string {
@@ -299,80 +342,98 @@ func renderHeader(view ViewMode, statusText string, width int) string {
 	return bar
 }
 
-// loadData fetches all required data from the API in one shot.
+// loadData fetches all required data from the API and caches it.
 func loadData(client *api.Client, teamID, spaceID string) tea.Cmd {
 	return func() tea.Msg {
-		state := AppState{
-			Client:  client,
-			TeamID:  teamID,
-			SpaceID: spaceID,
-		}
-
-		// Current user
-		user, err := client.GetCurrentUser()
-		if err != nil {
-			return DataLoadedMsg{Err: fmt.Errorf("get current user: %w", err)}
-		}
-		state.CurrentUser = user
-
-		// Workspace members
-		members, err := client.GetWorkspaceMembers(teamID)
-		if err != nil {
-			return DataLoadedMsg{Err: fmt.Errorf("get members: %w", err)}
-		}
-		state.Members = members
-
-		// Task types
-		taskTypes, err := client.GetTaskTypes(teamID)
-		if err != nil {
-			// Non-fatal — continue without task types
-			taskTypes = nil
-		}
-		state.TaskTypes = taskTypes
-
-		// Space (for statuses)
-		space, err := client.GetSpace(spaceID)
-		if err != nil {
-			return DataLoadedMsg{Err: fmt.Errorf("get space: %w", err)}
-		}
-		state.Statuses = space.Statuses
-
-		// All lists in the space
-		lists, err := client.GetAllLists(spaceID)
-		if err != nil {
-			return DataLoadedMsg{Err: fmt.Errorf("get lists: %w", err)}
-		}
-
-		state.Lists = lists
-
-		// Gather statuses from lists too
-		statusSeen := make(map[string]bool)
-		for _, s := range state.Statuses {
-			statusSeen[s.ID] = true
-		}
-		for _, list := range lists {
-			for _, s := range list.Statuses {
-				if !statusSeen[s.ID] {
-					state.Statuses = append(state.Statuses, s)
-					statusSeen[s.ID] = true
-				}
-			}
-		}
-
-		// Tasks for all lists
-		var allTasks []api.Task
-		for _, list := range lists {
-			tasks, err := client.GetTasks(list.ID)
-			if err != nil {
-				// skip lists we can't read
-				continue
-			}
-			allTasks = append(allTasks, tasks...)
-		}
-
-		// Resolve to leaf tasks
-		state.Tasks = api.ResolveLeafTasks(allTasks, 5)
-
-		return DataLoadedMsg{State: state}
+		return loadDataSync(client, teamID, spaceID)
 	}
+}
+
+func loadDataSync(client *api.Client, teamID, spaceID string) DataLoadedMsg {
+	state := AppState{
+		Client:  client,
+		TeamID:  teamID,
+		SpaceID: spaceID,
+	}
+
+	// Current user
+	user, err := client.GetCurrentUser()
+	if err != nil {
+		return DataLoadedMsg{Err: fmt.Errorf("get current user: %w", err)}
+	}
+	state.CurrentUser = user
+
+	// Workspace members
+	members, err := client.GetWorkspaceMembers(teamID)
+	if err != nil {
+		return DataLoadedMsg{Err: fmt.Errorf("get members: %w", err)}
+	}
+	state.Members = members
+
+	// Task types
+	taskTypes, err := client.GetTaskTypes(teamID)
+	if err != nil {
+		// Non-fatal — continue without task types
+		taskTypes = nil
+	}
+	state.TaskTypes = taskTypes
+
+	// Space (for statuses)
+	space, err := client.GetSpace(spaceID)
+	if err != nil {
+		return DataLoadedMsg{Err: fmt.Errorf("get space: %w", err)}
+	}
+	state.Statuses = space.Statuses
+
+	// All lists in the space
+	lists, err := client.GetAllLists(spaceID)
+	if err != nil {
+		return DataLoadedMsg{Err: fmt.Errorf("get lists: %w", err)}
+	}
+
+	state.Lists = lists
+
+	// Gather statuses from lists too
+	statusSeen := make(map[string]bool)
+	for _, s := range state.Statuses {
+		statusSeen[s.ID] = true
+	}
+	for _, list := range lists {
+		for _, s := range list.Statuses {
+			if !statusSeen[s.ID] {
+				state.Statuses = append(state.Statuses, s)
+				statusSeen[s.ID] = true
+			}
+		}
+	}
+
+	// Tasks for all lists
+	var allTasks []api.Task
+	for _, list := range lists {
+		tasks, err := client.GetTasks(list.ID)
+		if err != nil {
+			// skip lists we can't read
+			continue
+		}
+		allTasks = append(allTasks, tasks...)
+	}
+
+	// Resolve to leaf tasks
+	state.Tasks = api.ResolveLeafTasks(allTasks, 5)
+
+	// Save to cache
+	if c, err := cache.Open(); err == nil {
+		cached := CachedState{
+			CurrentUser: state.CurrentUser,
+			Members:     state.Members,
+			TaskTypes:   state.TaskTypes,
+			Statuses:    state.Statuses,
+			Lists:       state.Lists,
+			Tasks:       state.Tasks,
+		}
+		c.Set("state:"+spaceID, cached)
+		c.Close()
+	}
+
+	return DataLoadedMsg{State: state}
 }

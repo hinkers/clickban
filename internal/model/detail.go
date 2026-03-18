@@ -309,7 +309,8 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 		newStatusLower := strings.ToLower(newStatus)
 		d.task.Status.Status = newStatus
 		d.task.Status.ID = res.Selected[0].ID
-		d.updatedTask = &d.task
+		updated := d.task
+		d.updatedTask = &updated
 		return d, func() tea.Msg {
 			err := client.UpdateTask(taskID, &api.UpdateTaskRequest{Status: &newStatusLower})
 			if err != nil {

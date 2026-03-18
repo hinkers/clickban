@@ -21,6 +21,15 @@ type MyTasks struct {
 	height      int
 }
 
+func (m *MyTasks) listName(listID string) string {
+	for _, l := range m.state.Lists {
+		if l.ID == listID {
+			return l.Name
+		}
+	}
+	return ""
+}
+
 // NewMyTasks creates a MyTasks model from the app state.
 func NewMyTasks(state AppState) MyTasks {
 	m := MyTasks{state: state}
@@ -92,7 +101,8 @@ func (m MyTasks) View() string {
 
 	var content string
 	if previewW > 0 && m.SelectedTask() != nil {
-		preview := ui.RenderPreview(*m.SelectedTask(), previewW, tableH)
+		task := m.SelectedTask()
+		preview := ui.RenderPreview(*task, previewW, tableH, m.listName(task.ListID))
 		content = lipgloss.JoinHorizontal(lipgloss.Top, table, preview)
 	} else {
 		content = table
@@ -109,7 +119,8 @@ func (m MyTasks) renderTable(width, height int) string {
 	priW := 10
 	statusW := 16
 	timeW := 10
-	nameW := width - priW - statusW - timeW - 8
+	listW := 18
+	nameW := width - priW - statusW - timeW - listW - 10
 	if nameW < 10 {
 		nameW = 10
 	}
@@ -118,9 +129,10 @@ func (m MyTasks) renderTable(width, height int) string {
 	headerStyle := lipgloss.NewStyle().Foreground(ui.ColorFgBright).Bold(true)
 	hPri := headerStyle.Width(priW).Render("Priority")
 	hName := headerStyle.Width(nameW).Render("Task")
+	hList := headerStyle.Width(listW).Render("List")
 	hStatus := headerStyle.Width(statusW).Render("Status")
 	hTime := headerStyle.Width(timeW).Render("Time")
-	sb.WriteString(fmt.Sprintf("  %s  %s  %s  %s\n", hPri, hName, hStatus, hTime))
+	sb.WriteString(fmt.Sprintf("  %s  %s  %s  %s  %s\n", hPri, hName, hList, hStatus, hTime))
 
 	divider := lipgloss.NewStyle().Foreground(ui.ColorBorder).Render(strings.Repeat("─", width-2))
 	sb.WriteString("  " + divider + "\n")
@@ -161,6 +173,14 @@ func (m MyTasks) renderTable(width, height int) string {
 		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW)
 		statusCell := statusStyle.Render(task.Status.Status)
 
+		// List name
+		ln := m.listName(task.ListID)
+		if len(ln) > listW {
+			ln = ln[:listW-1] + "…"
+		}
+		listStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(listW)
+		listCell := listStyle.Render(ln)
+
 		// Time tracked
 		timeStr := ""
 		if task.TimeSpent > 0 {
@@ -173,7 +193,7 @@ func (m MyTasks) renderTable(width, height int) string {
 		if selected {
 			prefix = "> "
 		}
-		sb.WriteString(fmt.Sprintf("%s%s  %s  %s  %s\n", prefix, priCell, nameCell, statusCell, timeCell))
+		sb.WriteString(fmt.Sprintf("%s%s  %s  %s  %s  %s\n", prefix, priCell, nameCell, listCell, statusCell, timeCell))
 	}
 
 	return ui.BorderStyle.
