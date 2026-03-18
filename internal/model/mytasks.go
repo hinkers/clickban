@@ -227,7 +227,7 @@ func (m MyTasks) keyBindings() []ui.KeyBinding {
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
 		{Key: "!", Label: "needs data"},
-		{Key: "0/1/2", Label: "switch view"},
+		{Key: "1/2/3", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 	}

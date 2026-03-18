@@ -583,7 +583,7 @@ func (k Kanban) keyBindings() []ui.KeyBinding {
 		{Key: "m", Label: "move card"},
 		{Key: "o", Label: "sort:" + k.sortMode.String()},
 		{Key: "x", Label: "toggle done"},
-		{Key: "1/2", Label: "switch view"},
+		{Key: "1/2/3", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 	}

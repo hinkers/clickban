@@ -182,15 +182,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "q", "ctrl+c":
 				return a, tea.Quit
-			case "0", "t":
-				if a.view != ViewDetail {
-					a.view = ViewToday
-				}
-				return a, nil
 			case "1":
-				a.view = ViewKanban
+				a.view = ViewToday
 				return a, nil
 			case "2":
+				a.view = ViewKanban
+				return a, nil
+			case "3":
 				a.view = ViewMyTasks
 				return a, nil
 			case "r":
@@ -358,7 +356,7 @@ func (a *App) validationCount() int {
 }
 
 func renderHeader(view ViewMode, statusText string, validationCount int, width int) string {
-	tabs := []string{"[0] Today", "[1] Kanban", "[2] My Tasks"}
+	tabs := []string{"[1] Today", "[2] Kanban", "[3] My Tasks"}
 	var parts []string
 	for i, tab := range tabs {
 		mode := ViewMode(i)

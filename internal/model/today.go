@@ -659,7 +659,7 @@ func (t Today) keyBindings() []ui.KeyBinding {
 		{Key: "i", Label: "ignore"},
 		{Key: "d", Label: "done for day"},
 		{Key: "u", Label: "undo"},
-		{Key: "0/1/2", Label: "switch view"},
+		{Key: "1/2/3", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 	}
