@@ -366,6 +366,8 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 		typeID, err := strconv.Atoi(res.Selected[0].ID)
 		if err == nil {
 			d.task.CustomItem = &api.CustomItem{ID: typeID, Name: res.Selected[0].Label}
+			updated := d.task
+			d.updatedTask = &updated
 			return d, func() tea.Msg {
 				body := map[string]interface{}{"custom_item_id": typeID}
 				if err := client.Put(fmt.Sprintf("/task/%s", taskID), body, nil); err != nil {
@@ -412,6 +414,8 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 			}
 		}
 		d.task.Assignees = newAssignees
+		updated := d.task
+		d.updatedTask = &updated
 
 		assignees := &api.Assignees{Add: addIDs, Remove: removeIDs}
 		return d, func() tea.Msg {

@@ -603,7 +603,11 @@ func (t Today) renderTable(width, height int) string {
 		if doneForDay {
 			statusStyle = statusStyle.Strikethrough(true)
 		}
-		statusCell := statusStyle.Render(task.Status.Status)
+		statusText := task.Status.Status
+		if len(statusText) > statusW-1 {
+			statusText = statusText[:statusW-2] + "…"
+		}
+		statusCell := statusStyle.Render(statusText)
 
 		// Remaining time
 		rem := remainingTimeMs(task)
