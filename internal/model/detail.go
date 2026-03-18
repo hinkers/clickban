@@ -487,7 +487,7 @@ func (d Detail) handleEditorResult(res ui.EditorResult) (Detail, tea.Cmd) {
 		}
 
 	case OverlayDueDate:
-		t, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+		t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(value), time.Now().Location())
 		if err != nil {
 			d.statusMsg = "Invalid date (use YYYY-MM-DD): " + value
 			return d, nil

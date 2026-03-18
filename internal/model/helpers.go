@@ -89,7 +89,9 @@ func formatRelativeDate(t time.Time) string {
 
 	days := int(dueDay.Sub(today).Hours() / 24)
 	switch {
-	case days < 0:
+	case days == -1:
+		return "yesterday"
+	case days < -1:
 		return fmt.Sprintf("%d days ago", -days)
 	case days == 0:
 		return "today"

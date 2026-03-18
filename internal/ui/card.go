@@ -120,7 +120,9 @@ func RenderCard(task api.Task, width int, selected bool) string {
 			days := int(dueDay.Sub(today).Hours() / 24)
 			var label string
 			switch {
-			case days < 0:
+			case days == -1:
+				label = "yesterday"
+			case days < -1:
 				label = fmt.Sprintf("%d days ago", -days)
 			case days == 0:
 				label = "today"

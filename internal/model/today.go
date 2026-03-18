@@ -233,18 +233,10 @@ func calculateTodayList(tasks []api.Task, actions map[string]string) []api.Task 
 		}
 	}
 
-	// Merge forced tasks at the front, then selected
-	// But keep forced tasks in their sorted position relative to selected
-	result := make([]api.Task, 0, len(forced)+len(selected))
-
-	// Build a set of forced IDs
-	forcedIDs := make(map[string]bool)
-	for _, f := range forced {
-		forcedIDs[f.ID] = true
-	}
-
-	// Merge all tasks (forced + selected) and sort them together
-	all := append(forced, selected...)
+	// Merge forced + selected and sort together
+	all := make([]api.Task, 0, len(forced)+len(selected))
+	all = append(all, forced...)
+	all = append(all, selected...)
 	sort.SliceStable(all, func(i, j int) bool {
 		iDue := isDueOrOverdue(all[i])
 		jDue := isDueOrOverdue(all[j])
@@ -270,8 +262,7 @@ func calculateTodayList(tasks []api.Task, actions map[string]string) []api.Task 
 		return false
 	})
 
-	result = all
-	return result
+	return all
 }
 
 // Update handles messages for the Today view.
