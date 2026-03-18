@@ -300,7 +300,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return a, nil
 			case "w":
-				a.showWeekly = true
+				if a.view == ViewToday {
+					a.showWeekly = true
+				}
 				return a, nil
 			case "n":
 				// Create new task — open list picker
