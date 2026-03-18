@@ -257,9 +257,10 @@ type Assignees struct {
 type CreateTimeEntryRequest struct {
 	Description string `json:"description,omitempty"`
 	Tags        []Tag  `json:"tags,omitempty"`
-	Start       int64  `json:"start"`
-	Stop        int64  `json:"stop,omitempty"`
-	Duration    int64  `json:"duration,omitempty"`
+	Start       *int64 `json:"start,omitempty"`
+	Stop        *int64 `json:"stop,omitempty"`
+	End         *int64 `json:"end,omitempty"`
+	Duration    int64  `json:"duration"`
 	Assignee    int    `json:"assignee,omitempty"`
 	Billable    bool   `json:"billable,omitempty"`
 	TaskID      string `json:"tid,omitempty"`

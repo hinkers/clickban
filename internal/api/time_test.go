@@ -55,8 +55,9 @@ func TestCreateTimeEntry(t *testing.T) {
 	defer server.Close()
 
 	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	start := int64(1000000)
 	req := &api.CreateTimeEntryRequest{
-		Start:    1000000,
+		Start:    &start,
 		Duration: 3600000,
 	}
 	err := client.CreateTimeEntry("t1", req)
