@@ -554,7 +554,12 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	if res.Mode == ui.TimerModeDuration {
 		ms := res.DurationMs
 		return d, func() tea.Msg {
+			now := time.Now()
+			startMs := now.Add(-time.Duration(ms) * time.Millisecond).UnixMilli()
+			endMs := now.UnixMilli()
 			req := &api.CreateTimeEntryRequest{
+				Start:    &startMs,
+				End:      &endMs,
 				Duration: ms,
 				TaskID:   taskID,
 			}
