@@ -553,6 +553,9 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 
 	if res.Mode == ui.TimerModeDuration {
 		ms := res.DurationMs
+		d.task.TimeSpent += ms
+		updated := d.task
+		d.updatedTask = &updated
 		return d, func() tea.Msg {
 			now := time.Now()
 			startMs := now.Add(-time.Duration(ms) * time.Millisecond).UnixMilli()
@@ -574,6 +577,9 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	start := res.Start
 	end := res.End
 	durationMs := end.Sub(start).Milliseconds()
+	d.task.TimeSpent += durationMs
+	updated := d.task
+	d.updatedTask = &updated
 	return d, func() tea.Msg {
 		req := &api.CreateTimeEntryRequest{
 			Start:    start.UnixMilli(),
