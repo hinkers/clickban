@@ -86,6 +86,8 @@ type App struct {
 	createListPicker *ui.Picker
 	createEditor     *ui.Editor
 	createListID     string // selected list for new task
+	// Weekly summary overlay
+	showWeekly bool
 }
 
 // NewApp creates a new App with the given client and IDs.
@@ -255,6 +257,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.createEditor = &editor
 			return a, cmd
 		}
+		if a.showWeekly {
+			switch msg.String() {
+			case "q", "esc", "w":
+				a.showWeekly = false
+			}
+			return a, nil
+		}
 
 		// Global keys when not in detail view
 		if a.view != ViewDetail {
@@ -289,6 +298,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case ViewMyTasks:
 					a.view = ViewKanban
 				}
+				return a, nil
+			case "w":
+				a.showWeekly = true
 				return a, nil
 			case "n":
 				// Create new task — open list picker
@@ -451,6 +463,35 @@ func (a App) View() string {
 			Padding(1, 2).
 			Width(50).
 			Render(overlayContent)
+
+		boxH := lipgloss.Height(overlayBox)
+		boxW := lipgloss.Width(overlayBox)
+		padTop := max(0, (a.height-boxH)/2)
+		padLeft := max(0, (a.width-boxW)/2)
+		indent := strings.Repeat(" ", padLeft)
+		lines := strings.Split(result, "\n")
+		overlayLines := strings.Split(overlayBox, "\n")
+		for i, ol := range overlayLines {
+			row := padTop + i
+			if row < len(lines) {
+				lines[row] = indent + ol
+			}
+		}
+		result = strings.Join(lines, "\n")
+	}
+
+	// Weekly summary overlay
+	if a.showWeekly {
+		weeklyContent := RenderWeeklySummary(a.state, a.width-8, a.height-4)
+		hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n\nPress q/esc/w to close")
+		overlayBox := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ui.ColorBorderAct).
+			Background(ui.ColorCardBg).
+			Padding(1, 2).
+			Width(a.width - 4).
+			Height(a.height - 4).
+			Render(weeklyContent + hint)
 
 		boxH := lipgloss.Height(overlayBox)
 		boxW := lipgloss.Width(overlayBox)
