@@ -125,6 +125,24 @@ func TestGetAllLists(t *testing.T) {
 			},
 		})
 	})
+	mux.HandleFunc("/list/list1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "list1", "name": "List 1",
+			"statuses": []map[string]interface{}{
+				{"id": "s1", "status": "open", "type": "open"},
+			},
+		})
+	})
+	mux.HandleFunc("/list/list2", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "list2", "name": "Folderless List",
+			"statuses": []map[string]interface{}{
+				{"id": "s2", "status": "to do", "type": "open"},
+			},
+		})
+	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
 

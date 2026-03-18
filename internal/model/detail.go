@@ -210,6 +210,7 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 		if d.focus == FocusMain {
 			d.editor = ui.NewEditor("Edit Title", d.task.Name)
 			d.overlay = OverlayTitle
+			return d, d.editor.Init()
 		}
 
 	case "e":
@@ -217,12 +218,14 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 			// inline editor for description
 			d.editor = ui.NewEditor("Edit Description", d.task.Description)
 			d.overlay = OverlayDescription
+			return d, d.editor.Init()
 		} else if d.focus == FocusComments && len(d.comments) > 0 {
 			// edit own comment
 			cmt := d.comments[d.cmtCursor]
 			if d.state.CurrentUser != nil && cmt.User.ID == d.state.CurrentUser.ID {
 				d.editor = ui.NewEditor("Edit Comment", cmt.CommentText)
 				d.overlay = OverlayEditComment
+				return d, d.editor.Init()
 			}
 		}
 
@@ -294,6 +297,7 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 		// Add comment (works in either focus)
 		d.editor = ui.NewEditor("Add Comment", "")
 		d.overlay = OverlayComment
+		return d, d.editor.Init()
 
 	}
 	return d, nil

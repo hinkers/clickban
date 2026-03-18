@@ -26,19 +26,42 @@ func (c *Client) GetFolderlessLists(spaceID string) ([]List, error) {
 	return resp.Lists, nil
 }
 
+func (c *Client) GetList(listID string) (*List, error) {
+	var list List
+	if err := c.Get(fmt.Sprintf("/list/%s", listID), &list); err != nil {
+		return nil, fmt.Errorf("get list %s: %w", listID, err)
+	}
+	return &list, nil
+}
+
 func (c *Client) GetAllLists(spaceID string) ([]List, error) {
 	folders, err := c.GetFolders(spaceID)
 	if err != nil {
 		return nil, err
 	}
-	var allLists []List
+	// Collect list IDs from folders
+	var listIDs []string
 	for _, folder := range folders {
-		allLists = append(allLists, folder.Lists...)
+		for _, l := range folder.Lists {
+			listIDs = append(listIDs, l.ID)
+		}
 	}
 	folderless, err := c.GetFolderlessLists(spaceID)
 	if err != nil {
 		return nil, err
 	}
-	allLists = append(allLists, folderless...)
+	for _, l := range folderless {
+		listIDs = append(listIDs, l.ID)
+	}
+
+	// Fetch each list individually to get statuses
+	var allLists []List
+	for _, id := range listIDs {
+		list, err := c.GetList(id)
+		if err != nil {
+			return nil, err
+		}
+		allLists = append(allLists, *list)
+	}
 	return allLists, nil
 }
