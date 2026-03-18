@@ -79,8 +79,16 @@ func RenderPreview(task api.Task, width, height int, listName string) string {
 		}
 		sb.WriteString(labelStyle.Render("Assignees: ") + valueStyle.Render(strings.Join(names, ", ")) + "\n")
 	}
+	if task.TimeEstimate > 0 {
+		sb.WriteString(labelStyle.Render("Estimate: ") + valueStyle.Render(FormatDuration(task.TimeEstimate)) + "\n")
+	}
 	if task.TimeSpent > 0 {
 		sb.WriteString(labelStyle.Render("Time: ") + valueStyle.Render(FormatDuration(task.TimeSpent)) + "\n")
+	}
+	if task.DueDate != "" {
+		if ts := formatTimestamp(task.DueDate); ts != "" {
+			sb.WriteString(labelStyle.Render("Due: ") + valueStyle.Render(ts) + "\n")
+		}
 	}
 	if ts := formatTimestamp(task.DateCreated); ts != "" {
 		sb.WriteString(labelStyle.Render("Created: ") + valueStyle.Render(ts) + "\n")

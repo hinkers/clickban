@@ -246,12 +246,19 @@ func (m *MyTasks) filterTasks() []api.Task {
 		if !isAssigned {
 			continue
 		}
-		if m.needsDataFilter && !taskNeedsData(t) {
-			continue
+		if m.needsDataFilter {
+			if isClosedStatus(t.Status) || !taskNeedsData(t) {
+				continue
+			}
 		}
 		tasks = append(tasks, t)
 	}
-	sort.Slice(tasks, func(i, j int) bool {
+	sort.SliceStable(tasks, func(i, j int) bool {
+		iClosed := isClosedStatus(tasks[i].Status)
+		jClosed := isClosedStatus(tasks[j].Status)
+		if iClosed != jClosed {
+			return !iClosed // open tasks first
+		}
 		return priorityRank(tasks[i].Priority) < priorityRank(tasks[j].Priority)
 	})
 	return tasks
