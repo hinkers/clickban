@@ -886,11 +886,24 @@ func (d Detail) assigneePickerItems() ([]ui.PickerItem, []int) {
 
 	var items []ui.PickerItem
 	var selected []int
-	for i, m := range d.state.Members {
+
+	// Add current user first
+	if d.state.CurrentUser != nil {
+		items = append(items, ui.PickerItem{ID: strconv.Itoa(d.state.CurrentUser.ID), Label: d.state.CurrentUser.Username})
+		if currentIDs[d.state.CurrentUser.ID] {
+			selected = append(selected, 0)
+		}
+	}
+
+	for _, m := range d.state.Members {
 		u := m.User
+		if d.state.CurrentUser != nil && u.ID == d.state.CurrentUser.ID {
+			continue // already added first
+		}
+		idx := len(items)
 		items = append(items, ui.PickerItem{ID: strconv.Itoa(u.ID), Label: u.Username})
 		if currentIDs[u.ID] {
-			selected = append(selected, i)
+			selected = append(selected, idx)
 		}
 	}
 	return items, selected
