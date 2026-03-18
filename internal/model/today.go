@@ -113,11 +113,26 @@ func (t *Today) listName(listID string) string {
 func (t *Today) recalculate() {
 	myTasks := t.assignedTasks()
 	result := calculateTodayList(myTasks, t.todayActions)
-	t.items = make([]TodayItem, len(result))
-	for i, task := range result {
-		t.items[i] = TodayItem{
+	t.items = make([]TodayItem, 0, len(result))
+	for _, task := range result {
+		t.items = append(t.items, TodayItem{
 			Task:   task,
 			Action: t.todayActions[task.ID],
+		})
+	}
+	// Append done_for_day tasks (shown struck through, excluded from capacity)
+	for _, task := range myTasks {
+		if t.todayActions[task.ID] == "done_for_day" {
+			t.items = append(t.items, TodayItem{Task: task, Action: "done_for_day"})
+		}
+	}
+	// Append completed (closed) tasks that were on the list
+	for _, task := range t.state.Tasks {
+		if !isClosedStatus(task.Status) {
+			continue
+		}
+		if t.todayActions[task.ID] != "" {
+			t.items = append(t.items, TodayItem{Task: task, Action: "completed"})
 		}
 	}
 	t.calculated = true
@@ -371,13 +386,15 @@ func (t *Today) removeAction(taskID string) {
 }
 
 func (t *Today) forcePickerItems() []ui.PickerItem {
-	// Collect IDs already in the list
+	// Collect IDs already in the list (excluding ignored tasks which should be force-able)
 	inList := make(map[string]bool)
 	for _, item := range t.items {
-		inList[item.Task.ID] = true
+		if item.Action != "ignored" {
+			inList[item.Task.ID] = true
+		}
 	}
 
-	var items []ui.PickerItem
+	var candidates []api.Task
 	for _, task := range t.state.Tasks {
 		if isClosedStatus(task.Status) {
 			continue
@@ -385,7 +402,6 @@ func (t *Today) forcePickerItems() []ui.PickerItem {
 		if inList[task.ID] {
 			continue
 		}
-		// Check if assigned to current user
 		assigned := false
 		for _, a := range task.Assignees {
 			if t.state.CurrentUser != nil && a.ID == t.state.CurrentUser.ID {
@@ -396,7 +412,31 @@ func (t *Today) forcePickerItems() []ui.PickerItem {
 		if !assigned {
 			continue
 		}
-		items = append(items, ui.PickerItem{ID: task.ID, Label: task.Name})
+		candidates = append(candidates, task)
+	}
+
+	// Sort by priority then due date
+	sort.SliceStable(candidates, func(i, j int) bool {
+		iPri := priorityRank(candidates[i].Priority)
+		jPri := priorityRank(candidates[j].Priority)
+		if iPri != jPri {
+			return iPri < jPri
+		}
+		iDate, iOk := parseDueDate(candidates[i].DueDate)
+		jDate, jOk := parseDueDate(candidates[j].DueDate)
+		if iOk && jOk {
+			return iDate.Before(jDate)
+		}
+		return iOk && !jOk
+	})
+
+	var items []ui.PickerItem
+	for _, task := range candidates {
+		label := task.Name
+		if task.TimeEstimate > 0 {
+			label += " (" + ui.FormatDuration(task.TimeEstimate) + ")"
+		}
+		items = append(items, ui.PickerItem{ID: task.ID, Label: label})
 	}
 	return items
 }
@@ -464,25 +504,38 @@ func (t Today) renderTable(width, height int) string {
 
 	// Header
 	now := time.Now()
-	dateStr := now.Format("Mon, Jan 2")
+	dateStr := now.Format("Mon Jan 2")
 
-	// Calculate total capacity used
+	// Calculate total capacity used (exclude done_for_day and completed)
 	var totalMs int64
 	for _, item := range t.items {
-		if item.Action != "done_for_day" {
+		if item.Action != "done_for_day" && item.Action != "completed" && !isClosedStatus(item.Task.Status) {
 			rem := remainingTimeMs(item.Task)
 			if rem > 0 {
 				totalMs += rem
 			}
 		}
 	}
-	capacityStr := fmt.Sprintf("%s — %s / 7h",
-		dateStr,
-		formatDurationShort(totalMs),
-	)
-
+	filledH := float64(totalMs) / 3600000.0
 	headerStyle := lipgloss.NewStyle().Foreground(ui.ColorFgBright).Bold(true)
-	sb.WriteString(headerStyle.Render(capacityStr))
+	titleStr := headerStyle.Render(fmt.Sprintf("📋 Today — %s", dateStr))
+
+	var capStr string
+	if totalMs > int64(todayCapacityMs) {
+		excess := filledH - 7.0
+		capStr = lipgloss.NewStyle().Foreground(ui.ColorRed).Render(
+			fmt.Sprintf("⚠ %.1fh / 7.0h — over capacity by %.1fh", filledH, excess))
+	} else {
+		capStr = lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(
+			fmt.Sprintf("%.1fh / 7.0h", filledH))
+	}
+
+	// Right-align capacity on the header line
+	gap := width - lipgloss.Width(titleStr) - lipgloss.Width(capStr) - 6
+	if gap < 1 {
+		gap = 1
+	}
+	sb.WriteString(titleStr + strings.Repeat(" ", gap) + capStr)
 	sb.WriteString("\n")
 
 	// Column widths
@@ -515,11 +568,13 @@ func (t Today) renderTable(width, height int) string {
 		var priColor lipgloss.Color
 		switch priRank {
 		case 1:
-			priColor = ui.ColorRed
+			priColor = ui.ColorRed    // urgent=red
 		case 2:
-			priColor = ui.ColorYellow
+			priColor = ui.ColorYellow // high=orange (ColorYellow is #e0af68)
 		case 3:
-			priColor = ui.ColorGreen
+			priColor = ui.ColorBlue   // normal=blue
+		case 4:
+			priColor = ui.ColorFgDim  // low=grey
 		default:
 			priColor = ui.ColorFgDim
 		}
@@ -532,9 +587,9 @@ func (t Today) renderTable(width, height int) string {
 		}
 
 		// Force indicator
-		forceInd := "   "
+		forceInd := "    "
 		if item.Action == "forced" {
-			forceInd = lipgloss.NewStyle().Foreground(ui.ColorPurple).Render("★ ")
+			forceInd = lipgloss.NewStyle().Foreground(ui.ColorPurple).Render("[+] ")
 		}
 
 		// Task name
