@@ -2,7 +2,9 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hinkers/clickban/internal/api"
@@ -100,6 +102,41 @@ func RenderCard(task api.Task, width int, selected bool) string {
 	}
 	if timeLine != "" {
 		lines = append(lines, "  "+timeLine)
+	}
+
+	// Time estimate line
+	if task.TimeEstimate > 0 {
+		estStr := FormatDuration(task.TimeEstimate) + " est"
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(lipgloss.Color(ColorFgDim)).Render("⏳ "+estStr))
+	}
+
+	// Due date line
+	if task.DueDate != "" {
+		if ms, err := strconv.ParseInt(task.DueDate, 10, 64); err == nil {
+			due := time.UnixMilli(ms)
+			now := time.Now()
+			today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+			dueDay := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, due.Location())
+			days := int(dueDay.Sub(today).Hours() / 24)
+			var label string
+			switch {
+			case days < 0:
+				label = fmt.Sprintf("%d days ago", -days)
+			case days == 0:
+				label = "today"
+			case days == 1:
+				label = "tomorrow"
+			case days < 7:
+				label = due.Format("Mon")
+			default:
+				label = due.Format("Jan 2")
+			}
+			dueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorFgDim))
+			if days <= 0 {
+				dueStyle = dueStyle.Foreground(lipgloss.Color(ColorRed))
+			}
+			lines = append(lines, "  "+dueStyle.Render("📅 due "+label))
+		}
 	}
 
 	content := strings.Join(lines, "\n")

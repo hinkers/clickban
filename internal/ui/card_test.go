@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hinkers/clickban/internal/api"
 )
@@ -85,6 +87,32 @@ func TestRenderCard_ShowsTimeSpent(t *testing.T) {
 	result := RenderCard(task, 40, false)
 	if !strings.Contains(result, "2h30m") {
 		t.Errorf("expected card to contain '2h30m', got:\n%s", result)
+	}
+}
+
+func TestRenderCard_WithTimeEstimateAndDueDate(t *testing.T) {
+	task := api.Task{
+		Name:         "Test Task",
+		TimeEstimate: 7200000, // 2 hours
+		DueDate:      fmt.Sprintf("%d", time.Now().UnixMilli()), // due today
+	}
+	result := RenderCard(task, 30, false)
+	if !strings.Contains(result, "est") {
+		t.Errorf("expected time estimate in card, got:\n%s", result)
+	}
+	if !strings.Contains(result, "due") {
+		t.Errorf("expected due date in card, got:\n%s", result)
+	}
+}
+
+func TestRenderCard_WithoutTimeEstimateOrDueDate(t *testing.T) {
+	task := api.Task{Name: "No Data Task"}
+	result := RenderCard(task, 30, false)
+	if strings.Contains(result, "est") {
+		t.Errorf("should not show estimate when absent")
+	}
+	if strings.Contains(result, "due") {
+		t.Errorf("should not show due date when absent")
 	}
 }
 
