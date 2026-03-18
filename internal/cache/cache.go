@@ -46,6 +46,15 @@ func Open() (*Cache, error) {
 		return nil, fmt.Errorf("create cache table: %w", err)
 	}
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS today_state (
+		task_id TEXT PRIMARY KEY,
+		action  TEXT NOT NULL,
+		date    TEXT NOT NULL
+	)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("create today_state table: %w", err)
+	}
+
 	return &Cache{db: db, ttl: defaultTTL}, nil
 }
 
@@ -87,6 +96,45 @@ func (c *Cache) Set(key string, value interface{}) error {
 		"INSERT OR REPLACE INTO cache (key, value, fetched_at) VALUES (?, ?, ?)",
 		key, string(data), time.Now().UnixMilli(),
 	)
+	return err
+}
+
+// SetTodayAction records a force/ignore/done action for a task on a given date.
+func (c *Cache) SetTodayAction(taskID, action, date string) error {
+	_, err := c.db.Exec(
+		`INSERT OR REPLACE INTO today_state (task_id, action, date) VALUES (?, ?, ?)`,
+		taskID, action, date,
+	)
+	return err
+}
+
+// GetTodayActions returns all task actions for the given date.
+func (c *Cache) GetTodayActions(date string) (map[string]string, error) {
+	rows, err := c.db.Query(`SELECT task_id, action FROM today_state WHERE date = ?`, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	actions := make(map[string]string)
+	for rows.Next() {
+		var taskID, action string
+		if err := rows.Scan(&taskID, &action); err != nil {
+			return nil, err
+		}
+		actions[taskID] = action
+	}
+	return actions, rows.Err()
+}
+
+// ClearExpiredTodayState removes all today_state rows not matching the given date.
+func (c *Cache) ClearExpiredTodayState(today string) error {
+	_, err := c.db.Exec(`DELETE FROM today_state WHERE date != ?`, today)
+	return err
+}
+
+// RemoveTodayAction removes a specific task's today action.
+func (c *Cache) RemoveTodayAction(taskID string) error {
+	_, err := c.db.Exec(`DELETE FROM today_state WHERE task_id = ?`, taskID)
 	return err
 }
 
