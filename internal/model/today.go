@@ -531,11 +531,11 @@ func (t Today) renderTable(width, height int) string {
 
 	// Column widths
 	priW := 4
-	forceW := 3
-	statusW := 14
+	forceW := 4
+	statusW := 18
 	timeW := 8
 	dueW := 12
-	nameW := width - priW - forceW - statusW - timeW - dueW - 12
+	nameW := width - priW - forceW - statusW - timeW - dueW - 10
 	if nameW < 10 {
 		nameW = 10
 	}
@@ -585,10 +585,7 @@ func (t Today) renderTable(width, height int) string {
 
 		// Task name
 		name := task.Name
-		if len(name) > nameW {
-			name = name[:nameW-1] + "…"
-		}
-		nameStyle := lipgloss.NewStyle().Foreground(ui.ColorFg).Width(nameW)
+		nameStyle := lipgloss.NewStyle().Foreground(ui.ColorFg).Width(nameW).MaxWidth(nameW)
 		if selected {
 			nameStyle = nameStyle.Foreground(ui.ColorBlue).Bold(true)
 		}
@@ -602,7 +599,7 @@ func (t Today) renderTable(width, height int) string {
 		if task.Status.Color == "" {
 			statusColor = ui.ColorFgDim
 		}
-		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW)
+		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW).MaxWidth(statusW)
 		if doneForDay {
 			statusStyle = statusStyle.Strikethrough(true)
 		}
@@ -614,7 +611,7 @@ func (t Today) renderTable(width, height int) string {
 		if rem > 0 {
 			timeStr = formatDurationShort(rem)
 		}
-		timeStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(timeW)
+		timeStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(timeW).MaxWidth(timeW)
 		if doneForDay {
 			timeStyle = timeStyle.Strikethrough(true)
 		}
@@ -625,7 +622,7 @@ func (t Today) renderTable(width, height int) string {
 		if due, ok := parseDueDate(task.DueDate); ok {
 			dueStr = formatRelativeDate(due)
 		}
-		dueStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(dueW)
+		dueStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(dueW).MaxWidth(dueW)
 		if isDueOrOverdue(task) {
 			dueStyle = dueStyle.Foreground(ui.ColorRed)
 		}

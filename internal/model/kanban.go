@@ -119,6 +119,19 @@ func (k *Kanban) SelectedTask() *api.Task {
 	return &t
 }
 
+// FocusTask moves the cursor to the column and row containing the given task ID.
+func (k *Kanban) FocusTask(taskID string) {
+	for ci, col := range k.columns {
+		for ri, t := range col.Tasks {
+			if t.ID == taskID {
+				k.colIndex = ci
+				k.rowIndex = ri
+				return
+			}
+		}
+	}
+}
+
 // WantsDetail returns a task if the user pressed enter to open detail, or nil.
 func (k *Kanban) WantsDetail() *api.Task {
 	return k.wantsDetail

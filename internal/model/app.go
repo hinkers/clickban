@@ -209,8 +209,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			name := msg.Value
 			listID := a.createListID
 			client := a.state.Client
+			var assignees []int
+			if a.state.CurrentUser != nil {
+				assignees = []int{a.state.CurrentUser.ID}
+			}
 			return a, func() tea.Msg {
-				task, err := client.CreateTask(listID, &api.CreateTaskRequest{Name: name})
+				task, err := client.CreateTask(listID, &api.CreateTaskRequest{
+					Name:      name,
+					Assignees: assignees,
+				})
 				return TaskCreatedMsg{Task: task, Err: err}
 			}
 		}
@@ -273,6 +280,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.view = ViewToday
 				}
 				return a, nil
+			case "shift+tab":
+				switch a.view {
+				case ViewToday:
+					a.view = ViewMyTasks
+				case ViewKanban:
+					a.view = ViewToday
+				case ViewMyTasks:
+					a.view = ViewKanban
+				}
+				return a, nil
 			case "n":
 				// Create new task — open list picker
 				var items []ui.PickerItem
@@ -320,8 +337,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				// only quit if no overlay active
 				if !a.detail.HasOverlay() {
+					taskID := a.detail.task.ID
 					a.propagateDetailUpdates()
 					a.view = a.detailFrom
+					if a.view == ViewKanban {
+						a.kanban.FocusTask(taskID)
+					}
 					return a, nil
 				}
 			}
@@ -372,8 +393,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newDetail, cmd := a.detail.Update(msg)
 			a.detail = newDetail
 			if a.detail.WantsBack() {
+				taskID := a.detail.task.ID
 				a.propagateDetailUpdates()
 				a.view = a.detailFrom
+				if a.view == ViewKanban {
+					a.kanban.FocusTask(taskID)
+				}
 				a.detail.ClearWantsBack()
 			}
 			return a, cmd
