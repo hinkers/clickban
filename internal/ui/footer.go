@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -38,4 +39,15 @@ func RenderFooter(bindings []KeyBinding, width int) string {
 		Padding(0, 1)
 
 	return barStyle.Render(content)
+}
+
+// RenderValidationWarning renders "⚠ N tasks need data" if count > 0.
+// Returns empty string if count is 0.
+func RenderValidationWarning(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Foreground(ColorYellow).
+		Render(fmt.Sprintf("⚠ %d tasks need data", count))
 }
