@@ -244,37 +244,3 @@ func filterAndSortMyTasks(state AppState) []api.Task {
 	return mine
 }
 
-// priorityRank returns a sort rank for a priority (lower = higher priority).
-func priorityRank(p *api.Priority) int {
-	if p == nil {
-		return 99
-	}
-	switch p.Priority {
-	case "urgent":
-		return 1
-	case "high":
-		return 2
-	case "normal":
-		return 3
-	case "low":
-		return 4
-	}
-	return 99
-}
-
-func priorityDisplay(p *api.Priority) (string, lipgloss.Color) {
-	if p == nil {
-		return "–", ui.ColorFgDim
-	}
-	switch p.Priority {
-	case "urgent":
-		return "!! Urgent", ui.ColorRed
-	case "high":
-		return "! High", ui.ColorYellow
-	case "normal":
-		return "Normal", ui.ColorGreen
-	case "low":
-		return "Low", ui.ColorFgDim
-	}
-	return p.Priority, ui.ColorFgDim
-}

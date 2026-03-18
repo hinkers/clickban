@@ -589,12 +589,6 @@ func (k Kanban) keyBindings() []ui.KeyBinding {
 	}
 }
 
-// isClosedStatus returns true if the status type indicates completion.
-func isClosedStatus(s api.Status) bool {
-	t := strings.ToLower(s.Type)
-	return t == "closed" || t == "done"
-}
-
 // filterColumns returns columns filtered by showClosed.
 func filterColumns(all []KanbanColumn, showClosed bool) []KanbanColumn {
 	if showClosed {
