@@ -87,6 +87,12 @@ type CustomItem struct {
 	Description string `json:"description"`
 }
 
+// TaskRef is a reference to a list/folder/space returned inline on a task.
+type TaskRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
 // Task represents a ClickUp task.
 type Task struct {
 	ID          string       `json:"id"`
@@ -110,9 +116,9 @@ type Task struct {
 	TimeEstimate int64       `json:"time_estimate"`
 	TimeSpent   int64        `json:"time_spent"`
 	CustomFields []CustomField `json:"custom_fields"`
-	ListID      string       `json:"list_id"`
-	FolderID    string       `json:"folder_id"`
-	SpaceID     string       `json:"space_id"`
+	List        TaskRef      `json:"list"`
+	Folder      TaskRef      `json:"folder"`
+	Space       TaskRef      `json:"space"`
 	URL         string       `json:"url"`
 	CustomItem  *CustomItem  `json:"custom_item"`
 	Subtasks    []Task       `json:"subtasks"`

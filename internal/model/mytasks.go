@@ -110,7 +110,7 @@ func (m MyTasks) View() string {
 	var content string
 	if previewW > 0 && m.SelectedTask() != nil {
 		task := m.SelectedTask()
-		preview := ui.RenderPreview(*task, previewW, tableH, m.listName(task.ListID))
+		preview := ui.RenderPreview(*task, previewW, tableH, m.listName(task.List.ID))
 		content = lipgloss.JoinHorizontal(lipgloss.Top, table, preview)
 	} else {
 		content = table
@@ -187,7 +187,7 @@ func (m MyTasks) renderTable(width, height int) string {
 		statusCell := statusStyle.Render(task.Status.Status)
 
 		// List name
-		ln := m.listName(task.ListID)
+		ln := m.listName(task.List.ID)
 		if len(ln) > listW {
 			ln = ln[:listW-1] + "…"
 		}

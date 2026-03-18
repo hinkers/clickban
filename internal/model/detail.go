@@ -865,7 +865,7 @@ func (d Detail) mainWidth() int {
 func (d Detail) statusPickerItems() []ui.PickerItem {
 	// Use the task's list statuses if available
 	for _, list := range d.state.Lists {
-		if list.ID == d.task.ListID {
+		if list.ID == d.task.List.ID {
 			var items []ui.PickerItem
 			for _, s := range list.Statuses {
 				items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})

@@ -127,7 +127,7 @@ func (k *Kanban) WantsDetail() *api.Task {
 // statusItemsForTask returns picker items using the task's list statuses.
 func (k *Kanban) statusItemsForTask(task api.Task) []ui.PickerItem {
 	for _, list := range k.state.Lists {
-		if list.ID == task.ListID {
+		if list.ID == task.List.ID {
 			var items []ui.PickerItem
 			for _, s := range list.Statuses {
 				items = append(items, ui.PickerItem{ID: s.ID, Label: s.Status})
@@ -468,7 +468,7 @@ func (k Kanban) View() string {
 	if previewW > 0 {
 		task := k.SelectedTask()
 		if task != nil {
-			preview := ui.RenderPreview(*task, previewW, boardH, k.listName(task.ListID))
+			preview := ui.RenderPreview(*task, previewW, boardH, k.listName(task.List.ID))
 			board = lipgloss.JoinHorizontal(lipgloss.Top, board, preview)
 		}
 	}
