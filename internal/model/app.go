@@ -159,7 +159,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
 		if a.today.calculated {
 			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 		} else {
@@ -183,7 +183,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
 		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 
 	case ui.PickerResult:
@@ -230,7 +230,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Task != nil {
 			a.state.Tasks = append(a.state.Tasks, *msg.Task)
 			a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-			a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+			a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
 			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 			// Open the new task in detail view
 			a.detailFrom = a.view
@@ -481,7 +481,7 @@ func (a *App) propagateDetailUpdates() {
 			}
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
 		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 	}
 }

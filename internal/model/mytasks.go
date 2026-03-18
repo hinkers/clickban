@@ -38,6 +38,13 @@ func NewMyTasks(state AppState) MyTasks {
 	return m
 }
 
+// NewMyTasksWithFilter creates a MyTasks model preserving the filter state.
+func NewMyTasksWithFilter(state AppState, needsDataFilter bool) MyTasks {
+	m := MyTasks{state: state, needsDataFilter: needsDataFilter}
+	m.tasks = m.filterTasks()
+	return m
+}
+
 // Resize sets terminal dimensions.
 func (m MyTasks) Resize(w, h int) MyTasks {
 	m.width = w
