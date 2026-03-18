@@ -51,7 +51,8 @@ func NewTimerInput() TimerInput {
 	ti.CharLimit = 64
 
 	return TimerInput{
-		mode: TimerModeMenu,
+		mode:  TimerModeMenu,
+		input: ti,
 	}
 }
 

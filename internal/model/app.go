@@ -191,6 +191,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "3":
 				a.view = ViewMyTasks
 				return a, nil
+			case "tab":
+				switch a.view {
+				case ViewToday:
+					a.view = ViewKanban
+				case ViewKanban:
+					a.view = ViewMyTasks
+				case ViewMyTasks:
+					a.view = ViewToday
+				}
+				return a, nil
 			case "r":
 				a.loading = true
 				return a, loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
