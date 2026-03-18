@@ -433,6 +433,20 @@ func (a App) View() string {
 			Render("\n  Loading data from ClickUp…\n")
 	}
 
+	// Weekly summary — full screen, skip normal view
+	if a.showWeekly {
+		weeklyContent := RenderWeeklySummary(a.state, a.width-6, a.height-6)
+		hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\nq/esc/w: close")
+		return lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ui.ColorBorderAct).
+			Background(ui.ColorCardBg).
+			Padding(1, 2).
+			Width(a.width - 2).
+			Height(a.height - 2).
+			Render(weeklyContent + hint)
+	}
+
 	var content string
 	switch a.view {
 	case ViewToday:
@@ -480,20 +494,6 @@ func (a App) View() string {
 			}
 		}
 		result = strings.Join(lines, "\n")
-	}
-
-	// Weekly summary overlay — full screen replacement
-	if a.showWeekly {
-		weeklyContent := RenderWeeklySummary(a.state, a.width-6, a.height-6)
-		hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\nq/esc/w: close")
-		result = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ui.ColorBorderAct).
-			Background(ui.ColorCardBg).
-			Padding(1, 2).
-			Width(a.width - 2).
-			Height(a.height - 2).
-			Render(weeklyContent + hint)
 	}
 
 	return result
