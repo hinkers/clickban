@@ -11,6 +11,15 @@ import (
 	"github.com/hinkers/clickban/internal/ui"
 )
 
+func weeklyListName(state AppState, listID string) string {
+	for _, l := range state.Lists {
+		if l.ID == listID {
+			return l.Name
+		}
+	}
+	return ""
+}
+
 // RenderWeeklySummary renders the weekly summary overlay content.
 func RenderWeeklySummary(state AppState, width, height int) string {
 	now := time.Now()
@@ -106,8 +115,13 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 			if closed, ok := parseDueDate(task.DateClosed); ok {
 				closedStr = closed.Format("Mon Jan 2")
 			}
-			sb.WriteString(fmt.Sprintf("  %s  %s\n",
+			listLabel := weeklyListName(state, task.List.ID)
+			if listLabel != "" {
+				listLabel = dimStyle.Render(" [" + listLabel + "]")
+			}
+			sb.WriteString(fmt.Sprintf("  %s%s  %s\n",
 				nameStyle.Render(task.Name),
+				listLabel,
 				dimStyle.Render(closedStr)))
 		}
 	}
@@ -151,9 +165,14 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 				priLabel = lipgloss.NewStyle().Foreground(color).Render(strings.TrimSpace(label)) + " "
 			}
 
-			sb.WriteString(fmt.Sprintf("    %s%s%s\n",
+			listLabel := weeklyListName(state, task.List.ID)
+			if listLabel != "" {
+				listLabel = dimStyle.Render(" [" + listLabel + "]")
+			}
+			sb.WriteString(fmt.Sprintf("    %s%s%s%s\n",
 				priLabel,
 				nameStyle.Render(task.Name),
+				listLabel,
 				dueFlag))
 		}
 	}
