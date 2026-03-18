@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -89,6 +90,73 @@ func (e Editor) View() string {
 
 	hintStyle := lipgloss.NewStyle().Foreground(ColorFgDim)
 	sb.WriteString(hintStyle.Render("enter: confirm • esc: cancel"))
+
+	return sb.String()
+}
+
+// MultiLineEditor is a Bubble Tea model for multiline text editing.
+type MultiLineEditor struct {
+	title string
+	input textarea.Model
+}
+
+// NewMultiLineEditor creates a new multiline editor.
+func NewMultiLineEditor(title, initial string, width, height int) MultiLineEditor {
+	ta := textarea.New()
+	ta.SetValue(initial)
+	ta.Focus()
+	ta.CharLimit = 0
+	ta.SetWidth(width - 6)
+	ta.SetHeight(height - 8)
+	ta.ShowLineNumbers = false
+
+	return MultiLineEditor{
+		title: title,
+		input: ta,
+	}
+}
+
+// Init implements tea.Model.
+func (e MultiLineEditor) Init() tea.Cmd {
+	return textarea.Blink
+}
+
+// Update implements tea.Model.
+func (e MultiLineEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case msg.Type == tea.KeyEsc:
+			return e, func() tea.Msg {
+				return EditorResult{Cancelled: true}
+			}
+		case msg.Type == tea.KeyCtrlS:
+			val := e.input.Value()
+			return e, func() tea.Msg {
+				return EditorResult{Value: val, Cancelled: false}
+			}
+		}
+	}
+
+	var cmd tea.Cmd
+	e.input, cmd = e.input.Update(msg)
+	return e, cmd
+}
+
+// View implements tea.Model.
+func (e MultiLineEditor) View() string {
+	var sb strings.Builder
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorBlue).
+		Bold(true)
+	sb.WriteString(titleStyle.Render(e.title))
+	sb.WriteString("\n\n")
+	sb.WriteString(e.input.View())
+	sb.WriteString("\n\n")
+
+	hintStyle := lipgloss.NewStyle().Foreground(ColorFgDim)
+	sb.WriteString(hintStyle.Render("ctrl+s: save • esc: cancel"))
 
 	return sb.String()
 }

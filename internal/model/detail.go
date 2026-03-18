@@ -50,9 +50,10 @@ type Detail struct {
 	cmtCursor int
 
 	// overlay sub-models
-	picker ui.Picker
-	editor ui.Editor
-	timer  ui.TimerInput
+	picker      ui.Picker
+	editor      ui.Editor
+	multiEditor *ui.MultiLineEditor
+	timer       ui.TimerInput
 
 	wantsBack   bool
 	updatedTask *api.Task
@@ -167,7 +168,15 @@ func (d Detail) delegateToOverlay(msg tea.Msg) (Detail, tea.Cmd) {
 		m, cmd := d.picker.Update(msg)
 		d.picker = m.(ui.Picker)
 		return d, cmd
-	case OverlayTitle, OverlayDescription, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
+	case OverlayDescription:
+		if d.multiEditor != nil {
+			m, cmd := d.multiEditor.Update(msg)
+			me := m.(ui.MultiLineEditor)
+			d.multiEditor = &me
+			return d, cmd
+		}
+		return d, nil
+	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
 		m, cmd := d.editor.Update(msg)
 		d.editor = m.(ui.Editor)
 		return d, cmd
@@ -215,10 +224,11 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 
 	case "e":
 		if d.focus == FocusMain {
-			// inline editor for description
-			d.editor = ui.NewEditor("Edit Description", d.task.Description)
+			// multiline editor for description
+			me := ui.NewMultiLineEditor("Edit Description", d.task.Description, d.width, d.height)
+			d.multiEditor = &me
 			d.overlay = OverlayDescription
-			return d, d.editor.Init()
+			return d, d.multiEditor.Init()
 		} else if d.focus == FocusComments && len(d.comments) > 0 {
 			// edit own comment
 			cmt := d.comments[d.cmtCursor]
@@ -651,18 +661,26 @@ func (d Detail) renderWithOverlay() string {
 	switch d.overlay {
 	case OverlayStatus, OverlayPriority, OverlayType, OverlayAssignees:
 		overlayContent = d.picker.View()
-	case OverlayTitle, OverlayDescription, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
+	case OverlayDescription:
+		if d.multiEditor != nil {
+			overlayContent = d.multiEditor.View()
+		}
+	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
 		overlayContent = d.editor.View()
 	case OverlayTimer:
 		overlayContent = d.timer.View()
 	}
 
+	overlayWidth := 60
+	if d.overlay == OverlayDescription {
+		overlayWidth = max(60, d.width-10)
+	}
 	overlayStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(ui.ColorBlue).
 		Background(ui.ColorCardBg).
 		Padding(1, 2).
-		Width(60)
+		Width(overlayWidth)
 
 	overlayBox := overlayStyle.Render(overlayContent)
 
