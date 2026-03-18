@@ -34,6 +34,8 @@ const (
 	OverlayComment   // add new comment
 	OverlayEditComment // edit an existing comment
 	OverlayTimer
+	OverlayTimeEstimate
+	OverlayDueDate
 )
 
 // Detail is the task detail model.
@@ -165,7 +167,7 @@ func (d Detail) delegateToOverlay(msg tea.Msg) (Detail, tea.Cmd) {
 		m, cmd := d.picker.Update(msg)
 		d.picker = m.(ui.Picker)
 		return d, cmd
-	case OverlayTitle, OverlayComment, OverlayEditComment:
+	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
 		m, cmd := d.editor.Update(msg)
 		d.editor = m.(ui.Editor)
 		return d, cmd
@@ -272,6 +274,20 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 		if d.focus == FocusMain {
 			d.timer = ui.NewTimerInput()
 			d.overlay = OverlayTimer
+		}
+
+	case "T":
+		if d.focus == FocusMain {
+			d.overlay = OverlayTimeEstimate
+			d.editor = ui.NewEditor("Time Estimate (e.g. 2h30m)", "")
+			return d, d.editor.Init()
+		}
+
+	case "D":
+		if d.focus == FocusMain {
+			d.overlay = OverlayDueDate
+			d.editor = ui.NewEditor("Due Date (YYYY-MM-DD)", "")
+			return d, d.editor.Init()
 		}
 
 	case "c":
@@ -452,6 +468,41 @@ func (d Detail) handleEditorResult(res ui.EditorResult) (Detail, tea.Cmd) {
 			comments, _ := client.GetComments(taskID)
 			return commentsLoadedMsg{taskID: taskID, comments: comments}
 		}
+
+	case OverlayTimeEstimate:
+		ms, err := ui.ParseDuration(value)
+		if err != nil {
+			d.statusMsg = "Invalid duration: " + value
+			return d, nil
+		}
+		d.task.TimeEstimate = ms
+		updated := d.task
+		d.updatedTask = &updated
+		return d, func() tea.Msg {
+			err := client.UpdateTask(taskID, &api.UpdateTaskRequest{TimeEstimate: &ms})
+			if err != nil {
+				return StatusMsg{Text: "time estimate update failed: " + err.Error()}
+			}
+			return StatusMsg{Text: "Time estimate updated"}
+		}
+
+	case OverlayDueDate:
+		t, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+		if err != nil {
+			d.statusMsg = "Invalid date (use YYYY-MM-DD): " + value
+			return d, nil
+		}
+		ms := t.UnixMilli()
+		d.task.DueDate = fmt.Sprintf("%d", ms)
+		updated := d.task
+		d.updatedTask = &updated
+		return d, func() tea.Msg {
+			err := client.UpdateTask(taskID, &api.UpdateTaskRequest{DueDate: &ms})
+			if err != nil {
+				return StatusMsg{Text: "due date update failed: " + err.Error()}
+			}
+			return StatusMsg{Text: "Due date updated"}
+		}
 	}
 	return d, nil
 }
@@ -558,6 +609,8 @@ func (d Detail) View() string {
 			{Key: "p", Label: "priority"},
 			{Key: "a", Label: "assignees"},
 			{Key: "t", Label: "log time"},
+			{Key: "T", Label: "estimate"},
+			{Key: "D", Label: "due date"},
 			{Key: "c", Label: "comment"},
 			{Key: "tab", Label: "comments"},
 			{Key: "q", Label: "back"},
@@ -584,7 +637,7 @@ func (d Detail) renderWithOverlay() string {
 	switch d.overlay {
 	case OverlayStatus, OverlayPriority, OverlayType, OverlayAssignees:
 		overlayContent = d.picker.View()
-	case OverlayTitle, OverlayDescription, OverlayComment, OverlayEditComment:
+	case OverlayTitle, OverlayDescription, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
 		overlayContent = d.editor.View()
 	case OverlayTimer:
 		overlayContent = d.timer.View()
@@ -692,6 +745,25 @@ func (d Detail) renderMain(width, height int) string {
 			"Time spent: " + ui.FormatDuration(d.task.TimeSpent),
 		))
 		sb.WriteString("\n")
+	}
+
+	// Time estimate
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim)
+	valueStyle := lipgloss.NewStyle().Foreground(ui.ColorFg)
+	if d.task.TimeEstimate > 0 {
+		sb.WriteString(labelStyle.Render("Estimate: "))
+		sb.WriteString(valueStyle.Render(ui.FormatDuration(d.task.TimeEstimate)))
+		sb.WriteString("\n")
+	}
+
+	// Due date
+	if d.task.DueDate != "" {
+		if ms, err := strconv.ParseInt(d.task.DueDate, 10, 64); err == nil {
+			due := time.UnixMilli(ms)
+			sb.WriteString(labelStyle.Render("Due: "))
+			sb.WriteString(valueStyle.Render(due.Format("Jan 2, 2006")))
+			sb.WriteString("\n")
+		}
 	}
 
 	// Description
