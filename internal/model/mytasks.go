@@ -13,12 +13,13 @@ import (
 
 // MyTasks is the my-tasks table view model.
 type MyTasks struct {
-	state       AppState
-	tasks       []api.Task
-	cursor      int
-	wantsDetail *api.Task
-	width       int
-	height      int
+	state           AppState
+	tasks           []api.Task
+	cursor          int
+	wantsDetail     *api.Task
+	needsDataFilter bool
+	width           int
+	height          int
 }
 
 func (m *MyTasks) listName(listID string) string {
@@ -33,7 +34,7 @@ func (m *MyTasks) listName(listID string) string {
 // NewMyTasks creates a MyTasks model from the app state.
 func NewMyTasks(state AppState) MyTasks {
 	m := MyTasks{state: state}
-	m.tasks = filterAndSortMyTasks(state)
+	m.tasks = m.filterTasks()
 	return m
 }
 
@@ -80,6 +81,13 @@ func (m MyTasks) Update(msg tea.Msg) (MyTasks, tea.Cmd) {
 			if t := m.SelectedTask(); t != nil {
 				m.wantsDetail = t
 			}
+		case "!":
+			m.needsDataFilter = !m.needsDataFilter
+			m.tasks = m.filterTasks()
+			if m.cursor >= len(m.tasks) {
+				m.cursor = max(0, len(m.tasks)-1)
+			}
+			return m, nil
 		}
 	}
 	return m, nil
@@ -132,7 +140,12 @@ func (m MyTasks) renderTable(width, height int) string {
 	hList := headerStyle.Width(listW).Render("List")
 	hStatus := headerStyle.Width(statusW).Render("Status")
 	hTime := headerStyle.Width(timeW).Render("Time")
-	sb.WriteString(fmt.Sprintf("  %s  %s  %s  %s  %s\n", hPri, hName, hList, hStatus, hTime))
+	header := fmt.Sprintf("  %s  %s  %s  %s  %s", hPri, hName, hList, hStatus, hTime)
+	if m.needsDataFilter {
+		filterIndicator := lipgloss.NewStyle().Foreground(ui.ColorYellow).Faint(true).Render(" [!] Showing tasks needing data")
+		header += filterIndicator
+	}
+	sb.WriteString(header + "\n")
 
 	divider := lipgloss.NewStyle().Foreground(ui.ColorBorder).Render(strings.Repeat("─", width-2))
 	sb.WriteString("  " + divider + "\n")
@@ -213,34 +226,34 @@ func (m MyTasks) keyBindings() []ui.KeyBinding {
 	return []ui.KeyBinding{
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
+		{Key: "!", Label: "needs data"},
 		{Key: "1/2", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
 	}
 }
 
-func filterAndSortMyTasks(state AppState) []api.Task {
-	if state.CurrentUser == nil {
-		return nil
-	}
-	myID := state.CurrentUser.ID
-
-	var mine []api.Task
-	for _, task := range state.Tasks {
-		for _, u := range task.Assignees {
-			if u.ID == myID {
-				mine = append(mine, task)
+func (m *MyTasks) filterTasks() []api.Task {
+	var tasks []api.Task
+	for _, t := range m.state.Tasks {
+		isAssigned := false
+		for _, a := range t.Assignees {
+			if m.state.CurrentUser != nil && a.ID == m.state.CurrentUser.ID {
+				isAssigned = true
 				break
 			}
 		}
+		if !isAssigned {
+			continue
+		}
+		if m.needsDataFilter && !taskNeedsData(t) {
+			continue
+		}
+		tasks = append(tasks, t)
 	}
-
-	sort.Slice(mine, func(i, j int) bool {
-		ri := priorityRank(mine[i].Priority)
-		rj := priorityRank(mine[j].Priority)
-		return ri < rj
+	sort.Slice(tasks, func(i, j int) bool {
+		return priorityRank(tasks[i].Priority) < priorityRank(tasks[j].Priority)
 	})
-
-	return mine
+	return tasks
 }
 
