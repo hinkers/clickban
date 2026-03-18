@@ -158,14 +158,6 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 		}
 	}
 
-	// Pad every line to full width to prevent terminal bleed-through
-	raw := sb.String()
-	lines := strings.Split(raw, "\n")
-	for i, line := range lines {
-		lineW := lipgloss.Width(line)
-		if lineW < innerW {
-			lines[i] = line + strings.Repeat(" ", innerW-lineW)
-		}
-	}
-	return strings.Join(lines, "\n")
+	// Wrap in a full-width style to ensure consistent background
+	return lipgloss.NewStyle().Width(innerW).Render(sb.String())
 }
