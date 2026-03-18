@@ -61,6 +61,12 @@ type StatusMsg struct {
 	Text string
 }
 
+// TaskCreatedMsg is sent when a new task has been created via the API.
+type TaskCreatedMsg struct {
+	Task *api.Task
+	Err  error
+}
+
 // App is the root Bubble Tea model.
 type App struct {
 	state       AppState
@@ -76,6 +82,10 @@ type App struct {
 	width       int
 	height      int
 	ready       bool
+	// Task creation state
+	createListPicker *ui.Picker
+	createEditor     *ui.Editor
+	createListID     string // selected list for new task
 }
 
 // NewApp creates a new App with the given client and IDs.
@@ -176,7 +186,69 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
 		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
 
+	case ui.PickerResult:
+		// Handle create task list picker
+		if a.createListPicker != nil {
+			a.createListPicker = nil
+			if msg.Cancelled || len(msg.Selected) == 0 {
+				return a, nil
+			}
+			a.createListID = msg.Selected[0].ID
+			editor := ui.NewEditor("New Task Name", "")
+			a.createEditor = &editor
+			return a, a.createEditor.Init()
+		}
+
+	case ui.EditorResult:
+		// Handle create task name editor
+		if a.createEditor != nil {
+			a.createEditor = nil
+			if msg.Cancelled || msg.Value == "" {
+				return a, nil
+			}
+			name := msg.Value
+			listID := a.createListID
+			client := a.state.Client
+			return a, func() tea.Msg {
+				task, err := client.CreateTask(listID, &api.CreateTaskRequest{Name: name})
+				return TaskCreatedMsg{Task: task, Err: err}
+			}
+		}
+
+	case TaskCreatedMsg:
+		if msg.Err != nil {
+			a.statusText = "Create task failed: " + msg.Err.Error()
+			return a, nil
+		}
+		if msg.Task != nil {
+			a.state.Tasks = append(a.state.Tasks, *msg.Task)
+			a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
+			a.myTasks = NewMyTasks(a.state).Resize(a.width, a.height)
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+			// Open the new task in detail view
+			a.detailFrom = a.view
+			a.detail = NewDetail(*msg.Task, a.state).Resize(a.width, a.height)
+			a.view = ViewDetail
+			a.statusText = "Task created"
+			return a, a.detail.Init()
+		}
+
 	case tea.KeyMsg:
+		// Route to create overlays if active
+		if a.createListPicker != nil {
+			p := *a.createListPicker
+			m, cmd := p.Update(msg)
+			np := m.(ui.Picker)
+			a.createListPicker = &np
+			return a, cmd
+		}
+		if a.createEditor != nil {
+			m, cmd := a.createEditor.Update(msg)
+			editor := m.(ui.Editor)
+			a.createEditor = &editor
+			return a, cmd
+		}
+
 		// Global keys when not in detail view
 		if a.view != ViewDetail {
 			switch msg.String() {
@@ -199,6 +271,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.view = ViewMyTasks
 				case ViewMyTasks:
 					a.view = ViewToday
+				}
+				return a, nil
+			case "n":
+				// Create new task — open list picker
+				var items []ui.PickerItem
+				for _, l := range a.state.Lists {
+					items = append(items, ui.PickerItem{ID: l.ID, Label: l.Name})
+				}
+				if len(items) > 0 {
+					p := ui.NewPicker("Create task in list", items, false)
+					a.createListPicker = &p
 				}
 				return a, nil
 			case "r":
@@ -326,7 +409,41 @@ func (a App) View() string {
 	// Status bar at top
 	header := renderHeader(a.view, a.statusText, a.validationCount(), a.width)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, content)
+	result := lipgloss.JoinVertical(lipgloss.Left, header, content)
+
+	// Render create task overlays
+	if a.createListPicker != nil || a.createEditor != nil {
+		var overlayContent string
+		if a.createListPicker != nil {
+			overlayContent = a.createListPicker.View()
+		} else if a.createEditor != nil {
+			overlayContent = a.createEditor.View()
+		}
+		overlayBox := lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(ui.ColorBorderAct).
+			Background(ui.ColorCardBg).
+			Padding(1, 2).
+			Width(50).
+			Render(overlayContent)
+
+		boxH := lipgloss.Height(overlayBox)
+		boxW := lipgloss.Width(overlayBox)
+		padTop := max(0, (a.height-boxH)/2)
+		padLeft := max(0, (a.width-boxW)/2)
+		indent := strings.Repeat(" ", padLeft)
+		lines := strings.Split(result, "\n")
+		overlayLines := strings.Split(overlayBox, "\n")
+		for i, ol := range overlayLines {
+			row := padTop + i
+			if row < len(lines) {
+				lines[row] = indent + ol
+			}
+		}
+		result = strings.Join(lines, "\n")
+	}
+
+	return result
 }
 
 func (a *App) propagateDetailUpdates() {

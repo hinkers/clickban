@@ -18,6 +18,14 @@ func (c *Client) GetTaskWithSubtasks(taskID string) (*Task, error) {
 	return &task, nil
 }
 
+func (c *Client) CreateTask(listID string, req *CreateTaskRequest) (*Task, error) {
+	var task Task
+	if err := c.Post(fmt.Sprintf("/list/%s/task", listID), req, &task); err != nil {
+		return nil, fmt.Errorf("create task in list %s: %w", listID, err)
+	}
+	return &task, nil
+}
+
 func (c *Client) UpdateTask(taskID string, req *UpdateTaskRequest) error {
 	var result Task
 	if err := c.Put(fmt.Sprintf("/task/%s", taskID), req, &result); err != nil {

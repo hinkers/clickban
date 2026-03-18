@@ -253,6 +253,15 @@ type Assignees struct {
 	Remove []int `json:"rem,omitempty"`
 }
 
+// CreateTaskRequest is the payload for creating a task.
+type CreateTaskRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Status      string `json:"status,omitempty"`
+	Priority    *int   `json:"priority,omitempty"`
+	Assignees   []int  `json:"assignees,omitempty"`
+}
+
 // CreateTimeEntryRequest is the payload for creating a time entry.
 type CreateTimeEntryRequest struct {
 	Description string `json:"description,omitempty"`
