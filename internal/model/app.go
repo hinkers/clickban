@@ -482,33 +482,18 @@ func (a App) View() string {
 		result = strings.Join(lines, "\n")
 	}
 
-	// Weekly summary overlay
+	// Weekly summary overlay — full screen replacement
 	if a.showWeekly {
-		weeklyContent := RenderWeeklySummary(a.state, a.width-8, a.height-4)
-		hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n\nPress q/esc/w to close")
-		overlayBox := lipgloss.NewStyle().
+		weeklyContent := RenderWeeklySummary(a.state, a.width-6, a.height-6)
+		hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\nq/esc/w: close")
+		result = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(ui.ColorBorderAct).
 			Background(ui.ColorCardBg).
 			Padding(1, 2).
-			Width(a.width - 4).
-			Height(a.height - 4).
+			Width(a.width - 2).
+			Height(a.height - 2).
 			Render(weeklyContent + hint)
-
-		boxH := lipgloss.Height(overlayBox)
-		boxW := lipgloss.Width(overlayBox)
-		padTop := max(0, (a.height-boxH)/2)
-		padLeft := max(0, (a.width-boxW)/2)
-		indent := strings.Repeat(" ", padLeft)
-		lines := strings.Split(result, "\n")
-		overlayLines := strings.Split(overlayBox, "\n")
-		for i, ol := range overlayLines {
-			row := padTop + i
-			if row < len(lines) {
-				lines[row] = indent + ol
-			}
-		}
-		result = strings.Join(lines, "\n")
 	}
 
 	return result
