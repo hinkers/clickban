@@ -116,8 +116,8 @@ func TestStopTimer(t *testing.T) {
 
 func TestGetRunningTimer_WithRunning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/team/team1/time_entries/running" {
-			t.Errorf("expected path /team/team1/time_entries/running, got %s", r.URL.Path)
+		if r.URL.Path != "/team/team1/time_entries/current" {
+			t.Errorf("expected path /team/team1/time_entries/current, got %s", r.URL.Path)
 		}
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)

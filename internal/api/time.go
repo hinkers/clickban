@@ -43,7 +43,7 @@ func (c *Client) GetRunningTimer(teamID string) (*RunningTimer, error) {
 	var raw struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := c.Get(fmt.Sprintf("/team/%s/time_entries/running", teamID), &raw); err != nil {
+	if err := c.Get(fmt.Sprintf("/team/%s/time_entries/current", teamID), &raw); err != nil {
 		return nil, fmt.Errorf("get running timer: %w", err)
 	}
 
