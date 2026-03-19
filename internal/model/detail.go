@@ -321,7 +321,7 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 
 	case "t":
 		if d.focus == FocusMain {
-			d.timer = ui.NewTimerInput()
+			d.timer = ui.NewTimerInputWithRunning(d.runningTimer != nil)
 			d.overlay = OverlayTimer
 		}
 
@@ -590,13 +590,18 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 
 	if res.Mode == ui.TimerModeLive {
 		if res.Action == "start" {
-			return d, func() tea.Msg {
-				if err := client.StartTimer(teamID, taskID); err != nil {
-					return StatusMsg{Text: "start timer failed: " + err.Error()}
-				}
-				return StatusMsg{Text: "Timer started"}
-			}
+			d.runningTimer = &api.RunningTimer{TaskID: taskID, Start: time.Now()}
+			return d, tea.Batch(
+				func() tea.Msg {
+					if err := client.StartTimer(teamID, taskID); err != nil {
+						return StatusMsg{Text: "start timer failed: " + err.Error()}
+					}
+					return StatusMsg{Text: "Timer started"}
+				},
+				tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} }),
+			)
 		}
+		d.runningTimer = nil
 		return d, func() tea.Msg {
 			if err := client.StopTimer(teamID); err != nil {
 				return StatusMsg{Text: "stop timer failed: " + err.Error()}
