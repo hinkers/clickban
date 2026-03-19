@@ -1,6 +1,11 @@
 package api
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"time"
+)
 
 func (c *Client) GetTimeEntries(taskID string) ([]TimeEntry, error) {
 	var resp TimeEntriesResponse
@@ -32,4 +37,40 @@ func (c *Client) StopTimer(teamID string) error {
 		return fmt.Errorf("stop timer: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) GetRunningTimer(teamID string) (*RunningTimer, error) {
+	var raw struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := c.Get(fmt.Sprintf("/team/%s/time_entries/running", teamID), &raw); err != nil {
+		return nil, fmt.Errorf("get running timer: %w", err)
+	}
+
+	// Try array first, then single object
+	var entries []RunningTimerEntry
+	if err := json.Unmarshal(raw.Data, &entries); err != nil {
+		var single RunningTimerEntry
+		if err2 := json.Unmarshal(raw.Data, &single); err2 != nil {
+			return nil, nil // no running timer
+		}
+		entries = []RunningTimerEntry{single}
+	}
+
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	entry := entries[0]
+	if entry.Task.ID == "" {
+		return nil, nil
+	}
+	startMs, err := strconv.ParseInt(entry.Start, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse timer start time %q: %w", entry.Start, err)
+	}
+	return &RunningTimer{
+		TaskID: entry.Task.ID,
+		Start:  time.UnixMilli(startMs),
+	}, nil
 }

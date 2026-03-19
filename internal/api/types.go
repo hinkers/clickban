@@ -1,5 +1,7 @@
 package api
 
+import "time"
+
 // User represents a ClickUp user.
 type User struct {
 	ID             int    `json:"id"`
@@ -209,6 +211,26 @@ type TimeEntry struct {
 // TimeEntriesResponse is the API response for listing time entries.
 type TimeEntriesResponse struct {
 	Data []TimeEntry `json:"data"`
+}
+
+// RunningTimer represents an actively running timer.
+type RunningTimer struct {
+	TaskID string
+	Start  time.Time
+}
+
+// RunningTimerEntry is a single entry from the running timer API response.
+type RunningTimerEntry struct {
+	ID   string `json:"id"`
+	Task struct {
+		ID string `json:"id"`
+	} `json:"task"`
+	Start string `json:"start"`
+}
+
+// RunningTimerResponse is the API response for getting the running timer.
+type RunningTimerResponse struct {
+	Data []RunningTimerEntry `json:"data"`
 }
 
 // TeamResponse is the API response for getting a team (workspace).

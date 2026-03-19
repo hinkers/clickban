@@ -113,3 +113,85 @@ func TestStopTimer(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestGetRunningTimer_WithRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/team/team1/time_entries/running" {
+			t.Errorf("expected path /team/team1/time_entries/running, got %s", r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{
+					"id":    "te5",
+					"task":  map[string]string{"id": "task123"},
+					"start": "1710000000000",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	timer, err := client.GetRunningTimer("team1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if timer == nil {
+		t.Fatal("expected a running timer, got nil")
+	}
+	if timer.TaskID != "task123" {
+		t.Errorf("expected task ID 'task123', got %q", timer.TaskID)
+	}
+	if timer.Start.IsZero() {
+		t.Error("expected non-zero start time")
+	}
+}
+
+func TestGetRunningTimer_SingleObject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":    "te6",
+				"task":  map[string]string{"id": "task456"},
+				"start": "1710000000000",
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	timer, err := client.GetRunningTimer("team1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if timer == nil {
+		t.Fatal("expected a running timer, got nil")
+	}
+	if timer.TaskID != "task456" {
+		t.Errorf("expected task ID 'task456', got %q", timer.TaskID)
+	}
+}
+
+func TestGetRunningTimer_NoneRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []interface{}{},
+		})
+	}))
+	defer server.Close()
+
+	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	timer, err := client.GetRunningTimer("team1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if timer != nil {
+		t.Errorf("expected nil timer, got %+v", timer)
+	}
+}
