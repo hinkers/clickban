@@ -670,6 +670,10 @@ func (d Detail) View() string {
 
 	var footerBindings []ui.KeyBinding
 	if d.focus == FocusMain {
+		timerLabel := "log time"
+		if d.runningTimer != nil {
+			timerLabel = "timer"
+		}
 		footerBindings = []ui.KeyBinding{
 			{Key: "i", Label: "title"},
 			{Key: "e", Label: "desc"},
@@ -677,7 +681,7 @@ func (d Detail) View() string {
 			{Key: "s", Label: "status"},
 			{Key: "p", Label: "priority"},
 			{Key: "a", Label: "assignees"},
-			{Key: "t", Label: "log time"},
+			{Key: "t", Label: timerLabel},
 			{Key: "T", Label: "estimate"},
 			{Key: "D", Label: "due date"},
 			{Key: "c", Label: "comment"},
@@ -820,6 +824,15 @@ func (d Detail) renderMain(width, height int) string {
 	if d.task.TimeSpent > 0 {
 		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(
 			"Time spent: " + ui.FormatDuration(d.task.TimeSpent),
+		))
+		sb.WriteString("\n")
+	}
+
+	// Running timer
+	if d.runningTimer != nil {
+		elapsed := time.Since(d.runningTimer.Start).Milliseconds()
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true).Render(
+			"Timer: " + ui.FormatDurationWithSeconds(elapsed) + " (running)",
 		))
 		sb.WriteString("\n")
 	}
