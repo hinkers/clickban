@@ -54,6 +54,7 @@ type Detail struct {
 	editor      ui.Editor
 	multiEditor *ui.MultiLineEditor
 	timer       ui.TimerInput
+	runningTimer *api.RunningTimer // non-nil when a timer is running for this task
 
 	wantsBack   bool
 	updatedTask *api.Task
@@ -105,9 +106,18 @@ type commentsLoadedMsg struct {
 	err      error
 }
 
+// runningTimerMsg is an internal message for the loaded running timer.
+type runningTimerMsg struct {
+	timer *api.RunningTimer
+	err   error
+}
+
+// timerTickMsg triggers a re-render for the live timer display.
+type timerTickMsg struct{}
+
 // Init implements tea.Model — load comments.
 func (d Detail) Init() tea.Cmd {
-	return d.loadComments()
+	return tea.Batch(d.loadComments(), d.loadRunningTimer())
 }
 
 func (d Detail) loadComments() tea.Cmd {
@@ -116,6 +126,15 @@ func (d Detail) loadComments() tea.Cmd {
 	return func() tea.Msg {
 		comments, err := client.GetComments(taskID)
 		return commentsLoadedMsg{taskID: taskID, comments: comments, err: err}
+	}
+}
+
+func (d Detail) loadRunningTimer() tea.Cmd {
+	client := d.state.Client
+	teamID := d.state.TeamID
+	return func() tea.Msg {
+		timer, err := client.GetRunningTimer(teamID)
+		return runningTimerMsg{timer: timer, err: err}
 	}
 }
 
@@ -130,6 +149,23 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 			}
 			d.loadingCmts = false
 		}
+
+	case runningTimerMsg:
+		if msg.err != nil {
+			d.statusMsg = "timer check failed: " + msg.err.Error()
+			return d, nil
+		}
+		if msg.timer != nil && msg.timer.TaskID == d.task.ID {
+			d.runningTimer = msg.timer
+			return d, tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} })
+		}
+		return d, nil
+
+	case timerTickMsg:
+		if d.runningTimer != nil {
+			return d, tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} })
+		}
+		return d, nil
 
 	case StatusMsg:
 		d.statusMsg = msg.Text
