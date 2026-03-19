@@ -22,6 +22,22 @@ func FormatDuration(ms int64) string {
 	return fmt.Sprintf("%dm", minutes)
 }
 
+// FormatDurationWithSeconds converts milliseconds to a human-readable duration with seconds.
+// e.g. 5025000ms -> "1h23m45s", 312000ms -> "5m12s", 30000ms -> "30s"
+func FormatDurationWithSeconds(ms int64) string {
+	totalSeconds := ms / 1000
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+	if hours > 0 {
+		return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm%ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
+}
+
 // RenderCard renders a kanban card for a task.
 func RenderCard(task api.Task, width int, selected bool) string {
 	// Choose border color based on selection and priority

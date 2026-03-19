@@ -128,3 +128,34 @@ func TestRenderCard_WithPriority(t *testing.T) {
 		t.Errorf("expected card to contain task name with priority set, got:\n%s", result)
 	}
 }
+
+func TestFormatDurationWithSeconds_HoursMinutesSeconds(t *testing.T) {
+	// 1h23m45s = (1*3600 + 23*60 + 45) * 1000 = 5025000 ms
+	result := FormatDurationWithSeconds(5025000)
+	if result != "1h23m45s" {
+		t.Errorf("expected '1h23m45s', got '%s'", result)
+	}
+}
+
+func TestFormatDurationWithSeconds_MinutesSeconds(t *testing.T) {
+	// 5m12s = (5*60 + 12) * 1000 = 312000 ms
+	result := FormatDurationWithSeconds(312000)
+	if result != "5m12s" {
+		t.Errorf("expected '5m12s', got '%s'", result)
+	}
+}
+
+func TestFormatDurationWithSeconds_SecondsOnly(t *testing.T) {
+	// 30s = 30000 ms
+	result := FormatDurationWithSeconds(30000)
+	if result != "30s" {
+		t.Errorf("expected '30s', got '%s'", result)
+	}
+}
+
+func TestFormatDurationWithSeconds_Zero(t *testing.T) {
+	result := FormatDurationWithSeconds(0)
+	if result != "0s" {
+		t.Errorf("expected '0s', got '%s'", result)
+	}
+}
