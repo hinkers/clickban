@@ -601,12 +601,16 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 				tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} }),
 			)
 		}
+		elapsed := time.Since(d.runningTimer.Start).Milliseconds()
 		d.runningTimer = nil
+		d.task.TimeSpent += elapsed
+		updated := d.task
+		d.updatedTask = &updated
 		return d, func() tea.Msg {
 			if err := client.StopTimer(teamID); err != nil {
 				return StatusMsg{Text: "stop timer failed: " + err.Error()}
 			}
-			return StatusMsg{Text: "Timer stopped"}
+			return StatusMsg{Text: fmt.Sprintf("Timer stopped — logged %s", ui.FormatDuration(elapsed))}
 		}
 	}
 
