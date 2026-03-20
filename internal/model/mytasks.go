@@ -117,7 +117,7 @@ func (m MyTasks) View() string {
 	var content string
 	if previewW > 0 && m.SelectedTask() != nil {
 		task := m.SelectedTask()
-		preview := ui.RenderPreview(*task, previewW, tableH, m.listName(task.List.ID))
+		preview := ui.RenderPreview(*task, previewW, tableH, m.listName(task.List.ID), m.state.RunningTaskID)
 		content = lipgloss.JoinHorizontal(lipgloss.Top, table, preview)
 	} else {
 		content = table
@@ -190,8 +190,12 @@ func (m MyTasks) renderTable(width, height int) string {
 		if task.Status.Color == "" {
 			statusColor = ui.ColorFgDim
 		}
-		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW)
-		statusCell := statusStyle.Render(task.Status.Status)
+		statusStyle := lipgloss.NewStyle().Foreground(statusColor).Width(statusW).MaxWidth(statusW)
+		statusText := task.Status.Status
+		if len(statusText) > statusW-1 {
+			statusText = statusText[:statusW-2] + "…"
+		}
+		statusCell := statusStyle.Render(statusText)
 
 		// List name
 		ln := m.listName(task.List.ID)

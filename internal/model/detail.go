@@ -59,6 +59,7 @@ type Detail struct {
 	wantsBack   bool
 	updatedTask *api.Task
 	statusMsg   string
+	mainScroll  int
 	width       int
 	height      int
 }
@@ -112,6 +113,12 @@ type runningTimerMsg struct {
 	err   error
 }
 
+// taskRefreshedMsg is an internal message for a refreshed task.
+type taskRefreshedMsg struct {
+	task *api.Task
+	err  error
+}
+
 // timerTickMsg triggers a re-render for the live timer display.
 type timerTickMsg struct{}
 
@@ -129,6 +136,15 @@ func (d Detail) loadComments() tea.Cmd {
 	}
 }
 
+func (d Detail) loadTask() tea.Cmd {
+	client := d.state.Client
+	taskID := d.task.ID
+	return func() tea.Msg {
+		task, err := client.GetTask(taskID)
+		return taskRefreshedMsg{task: task, err: err}
+	}
+}
+
 func (d Detail) loadRunningTimer() tea.Cmd {
 	client := d.state.Client
 	teamID := d.state.TeamID
@@ -141,6 +157,17 @@ func (d Detail) loadRunningTimer() tea.Cmd {
 // Update implements tea.Model.
 func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case taskRefreshedMsg:
+		if msg.err != nil {
+			d.statusMsg = "refresh failed: " + msg.err.Error()
+		} else if msg.task != nil {
+			d.task = *msg.task
+			d.statusMsg = "Refreshed"
+			updated := d.task
+			d.updatedTask = &updated
+		}
+		return d, nil
 
 	case commentsLoadedMsg:
 		if msg.taskID == d.task.ID {
@@ -155,9 +182,12 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 			d.statusMsg = "timer check failed: " + msg.err.Error()
 			return d, nil
 		}
-		if msg.timer != nil && msg.timer.TaskID == d.task.ID {
-			d.runningTimer = msg.timer
-			return d, tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} })
+		if msg.timer != nil {
+			d.state.RunningTaskID = msg.timer.TaskID
+			if msg.timer.TaskID == d.task.ID {
+				d.runningTimer = msg.timer
+				return d, tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} })
+			}
 		}
 		return d, nil
 
@@ -236,15 +266,27 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 			d.focus = FocusMain
 		}
 
+	case "r":
+		if d.focus == FocusMain {
+			d.statusMsg = "Refreshing…"
+			return d, tea.Batch(d.loadTask(), d.loadComments())
+		}
+
 	case "j", "down":
-		if d.focus == FocusComments {
+		if d.focus == FocusMain {
+			d.mainScroll++
+		} else if d.focus == FocusComments {
 			if d.cmtCursor < len(d.comments)-1 {
 				d.cmtCursor++
 			}
 		}
 
 	case "k", "up":
-		if d.focus == FocusComments {
+		if d.focus == FocusMain {
+			if d.mainScroll > 0 {
+				d.mainScroll--
+			}
+		} else if d.focus == FocusComments {
 			if d.cmtCursor > 0 {
 				d.cmtCursor--
 			}
@@ -260,8 +302,9 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 
 	case "e":
 		if d.focus == FocusMain {
-			// multiline editor for description
-			me := ui.NewMultiLineEditor("Edit Description", d.task.Description, d.width, d.height)
+			// multiline editor for description — use overlay-relative dimensions
+			overlayWidth := max(60, d.width-10)
+			me := ui.NewMultiLineEditor("Edit Description", d.task.Description, overlayWidth-6, d.height)
 			d.multiEditor = &me
 			d.overlay = OverlayDescription
 			return d, d.multiEditor.Init()
@@ -591,6 +634,7 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	if res.Mode == ui.TimerModeLive {
 		if res.Action == "start" {
 			d.runningTimer = &api.RunningTimer{TaskID: taskID, Start: time.Now()}
+			d.state.RunningTaskID = taskID
 			return d, tea.Batch(
 				func() tea.Msg {
 					if err := client.StartTimer(teamID, taskID); err != nil {
@@ -603,6 +647,7 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 		}
 		elapsed := time.Since(d.runningTimer.Start).Milliseconds()
 		d.runningTimer = nil
+		d.state.RunningTaskID = ""
 		d.task.TimeSpent += elapsed
 		updated := d.task
 		d.updatedTask = &updated
@@ -679,9 +724,11 @@ func (d Detail) View() string {
 			timerLabel = "timer"
 		}
 		footerBindings = []ui.KeyBinding{
+			{Key: "j/k", Label: "scroll"},
+			{Key: "r", Label: "refresh"},
 			{Key: "i", Label: "title"},
 			{Key: "e", Label: "desc"},
-		{Key: "E", Label: "desc ($EDITOR)"},
+			{Key: "E", Label: "desc ($EDITOR)"},
 			{Key: "s", Label: "status"},
 			{Key: "p", Label: "priority"},
 			{Key: "a", Label: "assignees"},
@@ -865,16 +912,7 @@ func (d Detail) renderMain(width, height int) string {
 		sb.WriteString("\n")
 		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFgBright).Bold(true).Render("Description"))
 		sb.WriteString("\n")
-
-		desc := d.task.Description
-		maxChars := (height - 10) * (width - 4)
-		if maxChars < 100 {
-			maxChars = 100
-		}
-		if len(desc) > maxChars {
-			desc = desc[:maxChars-1] + "…"
-		}
-		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFg).Width(width-4).Render(desc))
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFg).Width(width-4).Render(d.task.Description))
 	}
 
 	// Status message
@@ -883,11 +921,36 @@ func (d Detail) renderMain(width, height int) string {
 		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorYellow).Width(width-4).Render(d.statusMsg))
 	}
 
+	// Apply scroll offset and truncate to fit panel height.
+	// lipgloss Height() only pads — it does not truncate overflow,
+	// so we must manually window the content.
+	content := sb.String()
+	lines := strings.Split(content, "\n")
+	// Border + padding consume ~2 lines, so visible area is height - 2
+	visible := height - 2
+	if visible < 1 {
+		visible = 1
+	}
+	scroll := d.mainScroll
+	maxScroll := len(lines) - visible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	end := scroll + visible
+	if end > len(lines) {
+		end = len(lines)
+	}
+	lines = lines[scroll:end]
+	content = strings.Join(lines, "\n")
+
 	borderStyle := ui.BorderStyle
 	if d.focus == FocusMain {
 		borderStyle = ui.ActiveBorderStyle
 	}
-	return borderStyle.Width(width-2).Height(height).Render(sb.String())
+	return borderStyle.Width(width-2).Height(height).Render(content)
 }
 
 func (d Detail) renderComments(width, height int) string {

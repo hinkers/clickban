@@ -23,15 +23,13 @@ func weeklyListName(state AppState, listID string) string {
 // RenderWeeklySummary renders the weekly summary overlay content.
 func RenderWeeklySummary(state AppState, width, height int) string {
 	now := time.Now()
-	// Last Monday to last Sunday
+	// Start of last week (Monday)
 	weekday := int(now.Weekday())
 	if weekday == 0 {
 		weekday = 7
 	}
 	lastMonday := now.AddDate(0, 0, -(weekday - 1 + 7))
 	lastMonday = time.Date(lastMonday.Year(), lastMonday.Month(), lastMonday.Day(), 0, 0, 0, 0, now.Location())
-	lastSunday := lastMonday.AddDate(0, 0, 6)
-	lastSunday = time.Date(lastSunday.Year(), lastSunday.Month(), lastSunday.Day(), 23, 59, 59, 0, now.Location())
 
 	twoWeeksOut := now.AddDate(0, 0, 14)
 
@@ -44,9 +42,8 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 
 	// Header
 	headerStyle := lipgloss.NewStyle().Foreground(ui.ColorBlue).Bold(true)
-	sb.WriteString(headerStyle.Render(fmt.Sprintf("📊 Weekly Summary — %s to %s",
-		lastMonday.Format("Mon Jan 2"),
-		lastSunday.Format("Mon Jan 2"))))
+	sb.WriteString(headerStyle.Render(fmt.Sprintf("📊 Weekly Summary — %s to now",
+		lastMonday.Format("Mon Jan 2"))))
 	sb.WriteString("\n\n")
 
 	// Collect tasks assigned to current user
@@ -68,10 +65,10 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 		}
 
 		if isClosedStatus(task.Status) {
-			// Check if completed last week
+			// Check if completed since start of last week
 			if task.DateClosed != "" {
 				if closed, ok := parseDueDate(task.DateClosed); ok {
-					if !closed.Before(lastMonday) && !closed.After(lastSunday) {
+					if !closed.Before(lastMonday) {
 						completed = append(completed, task)
 					}
 				}
@@ -104,10 +101,10 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 	sectionStyle := lipgloss.NewStyle().Foreground(ui.ColorGreen).Bold(true)
 
 	// Completed last week
-	sb.WriteString(sectionStyle.Render(fmt.Sprintf("✅ Completed Last Week (%d)", len(completed))))
+	sb.WriteString(sectionStyle.Render(fmt.Sprintf("✅ Completed Since Last Week (%d)", len(completed))))
 	sb.WriteString("\n")
 	if len(completed) == 0 {
-		sb.WriteString(dimStyle.Render("  No tasks completed last week."))
+		sb.WriteString(dimStyle.Render("  No tasks completed since last week."))
 		sb.WriteString("\n")
 	} else {
 		for _, task := range completed {

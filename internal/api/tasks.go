@@ -4,10 +4,18 @@ import "fmt"
 
 func (c *Client) GetTasks(listID string) ([]Task, error) {
 	var resp TasksResponse
-	if err := c.Get(fmt.Sprintf("/list/%s/task?subtasks=true", listID), &resp); err != nil {
+	if err := c.Get(fmt.Sprintf("/list/%s/task?subtasks=true&include_closed=true", listID), &resp); err != nil {
 		return nil, fmt.Errorf("get tasks for list %s: %w", listID, err)
 	}
 	return resp.Tasks, nil
+}
+
+func (c *Client) GetTask(taskID string) (*Task, error) {
+	var task Task
+	if err := c.Get(fmt.Sprintf("/task/%s", taskID), &task); err != nil {
+		return nil, fmt.Errorf("get task %s: %w", taskID, err)
+	}
+	return &task, nil
 }
 
 func (c *Client) GetTaskWithSubtasks(taskID string) (*Task, error) {

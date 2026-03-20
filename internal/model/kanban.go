@@ -482,7 +482,7 @@ func (k Kanban) View() string {
 	if previewW > 0 {
 		task := k.SelectedTask()
 		if task != nil {
-			preview := ui.RenderPreview(*task, previewW, boardH, k.listName(task.List.ID))
+			preview := ui.RenderPreview(*task, previewW, boardH, k.listName(task.List.ID), k.state.RunningTaskID)
 			board = lipgloss.JoinHorizontal(lipgloss.Top, board, preview)
 		}
 	}

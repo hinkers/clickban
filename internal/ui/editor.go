@@ -163,42 +163,41 @@ func (e MultiLineEditor) View() string {
 
 // OpenExternalEditor opens $EDITOR with the given content in a temp file
 // and returns a Cmd that yields an ExternalEditorResult when done.
+// Uses tea.ExecProcess to properly suspend the TUI while the editor runs.
 func OpenExternalEditor(content string) tea.Cmd {
-	return func() tea.Msg {
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
-		}
-
-		// Create temp file
-		f, err := os.CreateTemp("", "clickban-*.md")
-		if err != nil {
-			return ExternalEditorResult{Err: err}
-		}
-		defer os.Remove(f.Name())
-
-		if _, err := f.WriteString(content); err != nil {
-			f.Close()
-			return ExternalEditorResult{Err: err}
-		}
-		f.Close()
-
-		// Open editor
-		cmd := exec.Command(editor, f.Name())
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			return ExternalEditorResult{Err: err}
-		}
-
-		// Read back the edited content
-		data, err := os.ReadFile(f.Name())
-		if err != nil {
-			return ExternalEditorResult{Err: err}
-		}
-
-		return ExternalEditorResult{Content: string(data)}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
 	}
+
+	// Create temp file before suspending TUI
+	f, err := os.CreateTemp("", "clickban-*.md")
+	if err != nil {
+		return func() tea.Msg {
+			return ExternalEditorResult{Err: err}
+		}
+	}
+	tmpPath := f.Name()
+
+	if _, werr := f.WriteString(content); werr != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return func() tea.Msg {
+			return ExternalEditorResult{Err: werr}
+		}
+	}
+	f.Close()
+
+	c := exec.Command(editor, tmpPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		defer os.Remove(tmpPath)
+		if err != nil {
+			return ExternalEditorResult{Err: err}
+		}
+		data, rerr := os.ReadFile(tmpPath)
+		if rerr != nil {
+			return ExternalEditorResult{Err: rerr}
+		}
+		return ExternalEditorResult{Content: string(data)}
+	})
 }

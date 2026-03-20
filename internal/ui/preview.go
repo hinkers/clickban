@@ -23,7 +23,8 @@ func formatTimestamp(ms string) string {
 }
 
 // RenderPreview renders the task detail preview pane.
-func RenderPreview(task api.Task, width, height int, listName string) string {
+// runningTaskID is the ID of the task with a running timer (empty if none).
+func RenderPreview(task api.Task, width, height int, listName string, runningTaskID string) string {
 	if width < 4 {
 		width = 4
 	}
@@ -84,6 +85,10 @@ func RenderPreview(task api.Task, width, height int, listName string) string {
 	}
 	if task.TimeSpent > 0 {
 		sb.WriteString(labelStyle.Render("Time: ") + valueStyle.Render(FormatDuration(task.TimeSpent)) + "\n")
+	}
+	if runningTaskID != "" && task.ID == runningTaskID {
+		timerStyle := lipgloss.NewStyle().Foreground(ColorGreen).Bold(true)
+		sb.WriteString(timerStyle.Render("⏱ Timer running") + "\n")
 	}
 	if task.DueDate != "" {
 		if ts := formatTimestamp(task.DueDate); ts != "" {

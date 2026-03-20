@@ -449,7 +449,7 @@ func (t Today) View() string {
 	var content string
 	if previewW > 0 && t.SelectedTask() != nil {
 		task := t.SelectedTask()
-		preview := ui.RenderPreview(*task, previewW, tableH, t.listName(task.List.ID))
+		preview := ui.RenderPreview(*task, previewW, tableH, t.listName(task.List.ID), t.state.RunningTaskID)
 		content = lipgloss.JoinHorizontal(lipgloss.Top, table, preview)
 	} else {
 		content = table

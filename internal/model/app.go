@@ -30,8 +30,9 @@ type AppState struct {
 	Members     []api.Member
 	TaskTypes   []api.CustomItem
 	Statuses    []api.Status
-	Lists       []api.List
-	Tasks       []api.Task
+	Lists          []api.List
+	Tasks          []api.Task
+	RunningTaskID  string // task ID with a running timer (from ClickUp API)
 }
 
 // CachedState holds the serializable parts of AppState for caching.
@@ -664,6 +665,11 @@ func loadDataSync(client *api.Client, teamID, spaceID string) DataLoadedMsg {
 
 	// Resolve to leaf tasks
 	state.Tasks = api.ResolveLeafTasks(allTasks, 5)
+
+	// Check for running timer (non-fatal if it fails)
+	if timer, err := client.GetRunningTimer(teamID); err == nil && timer != nil {
+		state.RunningTaskID = timer.TaskID
+	}
 
 	// Save to cache
 	if c, err := cache.Open(); err == nil {
