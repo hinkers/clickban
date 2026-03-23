@@ -18,6 +18,7 @@ type MyTasks struct {
 	cursor          int
 	wantsDetail     *api.Task
 	needsDataFilter bool
+	showClosed      bool
 	width           int
 	height          int
 }
@@ -39,8 +40,8 @@ func NewMyTasks(state AppState) MyTasks {
 }
 
 // NewMyTasksWithFilter creates a MyTasks model preserving the filter state.
-func NewMyTasksWithFilter(state AppState, needsDataFilter bool) MyTasks {
-	m := MyTasks{state: state, needsDataFilter: needsDataFilter}
+func NewMyTasksWithFilter(state AppState, needsDataFilter bool, showClosed bool) MyTasks {
+	m := MyTasks{state: state, needsDataFilter: needsDataFilter, showClosed: showClosed}
 	m.tasks = m.filterTasks()
 	return m
 }
@@ -90,6 +91,13 @@ func (m MyTasks) Update(msg tea.Msg) (MyTasks, tea.Cmd) {
 			}
 		case "!":
 			m.needsDataFilter = !m.needsDataFilter
+			m.tasks = m.filterTasks()
+			if m.cursor >= len(m.tasks) {
+				m.cursor = max(0, len(m.tasks)-1)
+			}
+			return m, nil
+		case "x":
+			m.showClosed = !m.showClosed
 			m.tasks = m.filterTasks()
 			if m.cursor >= len(m.tasks) {
 				m.cursor = max(0, len(m.tasks)-1)
@@ -151,6 +159,10 @@ func (m MyTasks) renderTable(width, height int) string {
 	if m.needsDataFilter {
 		filterIndicator := lipgloss.NewStyle().Foreground(ui.ColorYellow).Faint(true).Render(" [!] Showing tasks needing data")
 		header += filterIndicator
+	}
+	if m.showClosed {
+		closedIndicator := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Faint(true).Render(" [x] Showing closed tasks")
+		header += closedIndicator
 	}
 	sb.WriteString(header + "\n")
 
@@ -234,10 +246,15 @@ func (m MyTasks) previewWidth() int {
 }
 
 func (m MyTasks) keyBindings() []ui.KeyBinding {
+	closedLabel := "show closed"
+	if m.showClosed {
+		closedLabel = "hide closed"
+	}
 	return []ui.KeyBinding{
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
 		{Key: "!", Label: "needs data"},
+		{Key: "x", Label: closedLabel},
 		{Key: "1/2/3", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
@@ -255,6 +272,9 @@ func (m *MyTasks) filterTasks() []api.Task {
 			}
 		}
 		if !isAssigned {
+			continue
+		}
+		if !m.showClosed && isClosedStatus(t.Status) && strings.ToLower(t.Status.Type) != "done" {
 			continue
 		}
 		if m.needsDataFilter {

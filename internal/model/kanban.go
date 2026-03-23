@@ -356,7 +356,7 @@ func (k Kanban) visibleCardCount(offset int) int {
 	}
 	count := 0
 	for i := offset; i < len(col.Tasks); i++ {
-		card := ui.RenderCard(col.Tasks[i], colW, false)
+		card := ui.RenderCard(col.Tasks[i], colW, false, k.state.RunningTaskID)
 		cardLines := lipgloss.Height(card)
 		if usedLines+cardLines+1 > maxLines {
 			break
@@ -561,7 +561,7 @@ func (k Kanban) renderColumn(col KanbanColumn, colIdx, width, height int) string
 	lastRendered := offset
 	for i := offset; i < len(col.Tasks); i++ {
 		selected := active && i == k.rowIndex
-		card := ui.RenderCard(col.Tasks[i], width, selected)
+		card := ui.RenderCard(col.Tasks[i], width, selected, k.state.RunningTaskID)
 		cardLines := lipgloss.Height(card)
 		if usedLines+cardLines+1 > maxLines { // +1 for potential scroll indicator
 			break
@@ -604,13 +604,14 @@ func (k Kanban) keyBindings() []ui.KeyBinding {
 }
 
 // filterColumns returns columns filtered by showClosed.
+// Only hides statuses with type "closed", not "done".
 func filterColumns(all []KanbanColumn, showClosed bool) []KanbanColumn {
 	if showClosed {
 		return all
 	}
 	var filtered []KanbanColumn
 	for _, col := range all {
-		if !isClosedStatus(col.Status) {
+		if strings.ToLower(col.Status.Type) != "closed" {
 			filtered = append(filtered, col)
 		}
 	}

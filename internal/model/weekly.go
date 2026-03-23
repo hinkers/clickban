@@ -85,8 +85,13 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 		return ci.Before(cj)
 	})
 
-	// Sort open by status, then priority
+	// Sort open by list name, then status, then priority
 	sort.SliceStable(open, func(i, j int) bool {
+		li := strings.ToLower(weeklyListName(state, open[i].List.ID))
+		lj := strings.ToLower(weeklyListName(state, open[j].List.ID))
+		if li != lj {
+			return li < lj
+		}
 		si := strings.ToLower(open[i].Status.Status)
 		sj := strings.ToLower(open[j].Status.Status)
 		if si != sj {
@@ -131,17 +136,13 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 		sb.WriteString(dimStyle.Render("  No open tasks."))
 		sb.WriteString("\n")
 	} else {
-		lastStatus := ""
+		lastList := ""
 		for _, task := range open {
-			status := task.Status.Status
-			if strings.ToLower(status) != lastStatus {
-				lastStatus = strings.ToLower(status)
-				statusColor := lipgloss.Color(task.Status.Color)
-				if task.Status.Color == "" {
-					statusColor = ui.ColorFgDim
-				}
+			listLabel := weeklyListName(state, task.List.ID)
+			if strings.ToLower(listLabel) != lastList {
+				lastList = strings.ToLower(listLabel)
 				sb.WriteString("\n")
-				sb.WriteString(lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render("  " + status))
+				sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorBlue).Bold(true).Render("  " + listLabel))
 				sb.WriteString("\n")
 			}
 
@@ -162,13 +163,14 @@ func RenderWeeklySummary(state AppState, width, height int) string {
 				priLabel = lipgloss.NewStyle().Foreground(color).Render(strings.TrimSpace(label)) + " "
 			}
 
-			listLabel := weeklyListName(state, task.List.ID)
-			if listLabel != "" {
-				listLabel = dimStyle.Render("[" + listLabel + "] ")
+			statusColor := lipgloss.Color(task.Status.Color)
+			if task.Status.Color == "" {
+				statusColor = ui.ColorFgDim
 			}
+			statusLabel := lipgloss.NewStyle().Foreground(statusColor).Render("[" + task.Status.Status + "] ")
 			sb.WriteString(fmt.Sprintf("    %s%s%s%s\n",
 				priLabel,
-				listLabel,
+				statusLabel,
 				nameStyle.Render(task.Name),
 				dueFlag))
 		}

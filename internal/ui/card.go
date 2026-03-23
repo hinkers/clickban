@@ -39,7 +39,11 @@ func FormatDurationWithSeconds(ms int64) string {
 }
 
 // RenderCard renders a kanban card for a task.
-func RenderCard(task api.Task, width int, selected bool) string {
+func RenderCard(task api.Task, width int, selected bool, extras ...string) string {
+	runningTaskID := ""
+	if len(extras) > 0 {
+		runningTaskID = extras[0]
+	}
 	// Choose border color based on selection and priority
 	borderColor := ColorBorder
 	if selected {
@@ -118,6 +122,11 @@ func RenderCard(task api.Task, width int, selected bool) string {
 	}
 	if timeLine != "" {
 		lines = append(lines, "  "+timeLine)
+	}
+
+	// Running timer indicator
+	if runningTaskID != "" && task.ID == runningTaskID {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(ColorGreen).Bold(true).Render("⏱ timer running"))
 	}
 
 	// Time estimate line

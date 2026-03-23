@@ -139,12 +139,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.ready = true
+		viewH := a.height - 1 // reserve 1 line for header bar
 		if !a.loading {
-			a.today = a.today.Resize(a.width, a.height)
-			a.kanban = a.kanban.Resize(a.width, a.height)
-			a.myTasks = a.myTasks.Resize(a.width, a.height)
+			a.today = a.today.Resize(a.width, viewH)
+			a.kanban = a.kanban.Resize(a.width, viewH)
+			a.myTasks = a.myTasks.Resize(a.width, viewH)
 			if a.view == ViewDetail {
-				a.detail = a.detail.Resize(a.width, a.height)
+				a.detail = a.detail.Resize(a.width, viewH)
 			}
 		}
 
@@ -161,12 +162,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.cache = c
 			}
 		}
-		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
 		if a.today.calculated {
-			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
 		} else {
-			a.today = NewToday(a.state, a.cache).Resize(a.width, a.height)
+			a.today = NewToday(a.state, a.cache).Resize(a.width, a.height-1)
 		}
 		a.statusText = ""
 		if msg.FromCache {
@@ -185,9 +186,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
-		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
-		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
 
 	case ui.PickerResult:
 		// Handle create task list picker
@@ -232,12 +233,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.Task != nil {
 			a.state.Tasks = append(a.state.Tasks, *msg.Task)
-			a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-			a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
-			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+			a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
+			a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
 			// Open the new task in detail view
 			a.detailFrom = a.view
-			a.detail = NewDetail(*msg.Task, a.state).Resize(a.width, a.height)
+			a.detail = NewDetail(*msg.Task, a.state).Resize(a.width, a.height-1)
 			a.view = ViewDetail
 			a.statusText = "Task created"
 			return a, a.detail.Init()
@@ -316,6 +317,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.createListPicker = &p
 				}
 				return a, nil
+			case "t":
+				// Jump to running timer task
+				if a.state.RunningTaskID != "" {
+					for _, task := range a.state.Tasks {
+						if task.ID == a.state.RunningTaskID {
+							a.detailFrom = a.view
+							a.detail = NewDetail(task, a.state).Resize(a.width, a.height-1)
+							a.view = ViewDetail
+							return a, a.detail.Init()
+						}
+					}
+				}
+				return a, nil
 			case "r":
 				a.loading = true
 				return a, loadData(a.state.Client, a.state.TeamID, a.state.SpaceID)
@@ -338,7 +352,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if task != nil {
 					a.detailFrom = a.view
-					a.detail = NewDetail(*task, a.state).Resize(a.width, a.height)
+					a.detail = NewDetail(*task, a.state).Resize(a.width, a.height-1)
 					a.view = ViewDetail
 					return a, a.detail.Init()
 				}
@@ -372,7 +386,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.today = newToday
 			if sel := a.today.WantsDetail(); sel != nil {
 				a.detailFrom = ViewToday
-				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
+				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
 				a.view = ViewDetail
 				a.today.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -385,7 +399,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Check if kanban wants to open detail
 			if sel := a.kanban.WantsDetail(); sel != nil {
 				a.detailFrom = ViewKanban
-				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
+				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
 				a.view = ViewDetail
 				a.kanban.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -397,7 +411,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.myTasks = newMyTasks
 			if sel := a.myTasks.WantsDetail(); sel != nil {
 				a.detailFrom = ViewMyTasks
-				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height)
+				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
 				a.view = ViewDetail
 				a.myTasks.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -407,6 +421,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ViewDetail:
 			newDetail, cmd := a.detail.Update(msg)
 			a.detail = newDetail
+			a.state.RunningTaskID = a.detail.state.RunningTaskID
 			if a.detail.WantsBack() {
 				taskID := a.detail.task.ID
 				a.propagateDetailUpdates()
@@ -461,7 +476,7 @@ func (a App) View() string {
 	}
 
 	// Status bar at top
-	header := renderHeader(a.view, a.statusText, a.validationCount(), a.width)
+	header := renderHeader(a.view, a.statusText, a.validationCount(), a.runningTimerLabel(), a.width)
 
 	result := lipgloss.JoinVertical(lipgloss.Left, header, content)
 
@@ -501,6 +516,9 @@ func (a App) View() string {
 }
 
 func (a *App) propagateDetailUpdates() {
+	// Always sync running timer state back from detail
+	a.state.RunningTaskID = a.detail.state.RunningTaskID
+
 	if updated := a.detail.UpdatedTask(); updated != nil {
 		task := *updated
 		for i, t := range a.state.Tasks {
@@ -509,9 +527,9 @@ func (a *App) propagateDetailUpdates() {
 				break
 			}
 		}
-		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height)
-		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter).Resize(a.width, a.height)
-		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height)
+		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
+		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
 	}
 }
 
@@ -536,7 +554,24 @@ func (a *App) validationCount() int {
 	return count
 }
 
-func renderHeader(view ViewMode, statusText string, validationCount int, width int) string {
+// runningTimerLabel returns a display string for the running timer, or empty.
+func (a *App) runningTimerLabel() string {
+	if a.state.RunningTaskID == "" {
+		return ""
+	}
+	for _, t := range a.state.Tasks {
+		if t.ID == a.state.RunningTaskID {
+			name := t.Name
+			if len(name) > 30 {
+				name = name[:29] + "…"
+			}
+			return name
+		}
+	}
+	return "unknown task"
+}
+
+func renderHeader(view ViewMode, statusText string, validationCount int, timerLabel string, width int) string {
 	tabs := []string{"[1] Today", "[2] Kanban", "[3] My Tasks"}
 	var parts []string
 	for i, tab := range tabs {
@@ -567,10 +602,21 @@ func renderHeader(view ViewMode, statusText string, validationCount int, width i
 		status += "  " + validationWarning
 	}
 
-	right := fmt.Sprintf("q:quit  r:refresh")
+	timerStr := ""
+	if timerLabel != "" {
+		timerStr = lipgloss.NewStyle().
+			Foreground(ui.ColorGreen).
+			Bold(true).
+			Render("⏱ " + timerLabel + "  ")
+	}
+
+	right := "q:quit  r:refresh"
+	if timerLabel != "" {
+		right = "t:timer  " + right
+	}
 	rightStyle := lipgloss.NewStyle().
 		Foreground(ui.ColorFgDim).
-		Render(right)
+		Render(timerStr + right)
 
 	leftWidth := width - lipgloss.Width(rightStyle) - 2
 	if leftWidth < 0 {

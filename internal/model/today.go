@@ -227,7 +227,7 @@ func calculateTodayList(tasks []api.Task, actions map[string]string) []api.Task 
 			continue
 		}
 
-		if usedMs+rem <= int64(todayCapacityMs) {
+		if usedMs < int64(todayCapacityMs) {
 			selected = append(selected, task)
 			usedMs += rem
 		}
@@ -614,8 +614,13 @@ func (t Today) renderTable(width, height int) string {
 		timeStr := ""
 		if rem > 0 {
 			timeStr = formatDurationShort(rem)
+		} else if task.TimeEstimate > 0 && task.TimeSpent > task.TimeEstimate {
+			timeStr = "-" + formatDurationShort(task.TimeSpent-task.TimeEstimate)
 		}
 		timeStyle := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Width(timeW).MaxWidth(timeW)
+		if task.TimeEstimate > 0 && task.TimeSpent > task.TimeEstimate {
+			timeStyle = timeStyle.Foreground(ui.ColorRed)
+		}
 		if doneForDay {
 			timeStyle = timeStyle.Strikethrough(true)
 		}
