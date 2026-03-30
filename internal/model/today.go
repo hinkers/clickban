@@ -400,9 +400,23 @@ func calculateTodayList(tasks []api.Task, actions map[string]string) []api.Task 
 func (t Today) Update(msg tea.Msg) (Today, tea.Cmd) {
 	switch msg := msg.(type) {
 	case ui.PickerResult:
+		if t.planningMode {
+			return t.handlePlanningResult(msg)
+		}
 		return t.handleForceResult(msg)
 
 	case tea.KeyMsg:
+		if t.planningPicker != nil {
+			if msg.String() == "a" {
+				return t.handleAutoFill()
+			}
+			p := *t.planningPicker
+			m, cmd := p.Update(msg)
+			np := m.(ui.Picker)
+			t.planningPicker = &np
+			return t, cmd
+		}
+
 		if t.forcePicker != nil {
 			p := *t.forcePicker
 			m, cmd := p.Update(msg)
@@ -413,7 +427,13 @@ func (t Today) Update(msg tea.Msg) (Today, tea.Cmd) {
 		return t.updateNormal(msg)
 	}
 
-	// Delegate non-key messages to picker if active
+	if t.planningPicker != nil {
+		p := *t.planningPicker
+		m, cmd := p.Update(msg)
+		np := m.(ui.Picker)
+		t.planningPicker = &np
+		return t, cmd
+	}
 	if t.forcePicker != nil {
 		p := *t.forcePicker
 		m, cmd := p.Update(msg)
@@ -472,6 +492,8 @@ func (t Today) updateNormal(msg tea.KeyMsg) (Today, tea.Cmd) {
 				t.cursor = max(0, len(t.items)-1)
 			}
 		}
+	case "p":
+		t.openPlanningMode()
 	case "enter":
 		if sel := t.SelectedTask(); sel != nil {
 			t.wantsDetail = sel
@@ -490,6 +512,58 @@ func (t Today) handleForceResult(res ui.PickerResult) (Today, tea.Cmd) {
 	t.setAction(taskID, "forced")
 	t.recalculate()
 	return t, nil
+}
+
+func (t Today) handlePlanningResult(res ui.PickerResult) (Today, tea.Cmd) {
+	t.planningPicker = nil
+	t.planningMode = false
+
+	if res.Cancelled {
+		return t, nil
+	}
+
+	for _, item := range res.Selected {
+		if item.Header {
+			continue
+		}
+		t.setAction(item.ID, "forced")
+	}
+
+	t.markPlanned()
+	t.plannedToday = true
+	t.recalculate()
+	return t, nil
+}
+
+func (t Today) handleAutoFill() (Today, tea.Cmd) {
+	if t.planningPicker == nil {
+		return t, nil
+	}
+
+	p := *t.planningPicker
+	items := p.Items()
+	for i, item := range items {
+		if item.Header {
+			continue
+		}
+		if p.IsSelected(i) {
+			t.setAction(item.ID, "forced")
+		}
+	}
+
+	t.planningPicker = nil
+	t.planningMode = false
+	t.markPlanned()
+	t.plannedToday = true
+	t.recalculate()
+	return t, nil
+}
+
+func (t *Today) markPlanned() {
+	if t.cache != nil {
+		today := time.Now().Format("2006-01-02")
+		_ = t.cache.SetTodayAction("_planned", "done", today)
+	}
 }
 
 func (t *Today) setAction(taskID, action string) {
