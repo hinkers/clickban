@@ -23,34 +23,66 @@ type TodayItem struct {
 
 // Today is the today view model.
 type Today struct {
-	state        AppState
-	cache        *cache.Cache
-	items        []TodayItem
-	todayActions map[string]string // taskID -> action
-	cursor       int
-	wantsDetail  *api.Task
-	calculated   bool
-	forcePicker  *ui.Picker
-	width        int
-	height       int
+	state          AppState
+	cache          *cache.Cache
+	items          []TodayItem
+	todayActions   map[string]string // taskID -> action
+	cursor         int
+	wantsDetail    *api.Task
+	calculated     bool
+	forcePicker    *ui.Picker
+	planningMode   bool             // true when in planning mode
+	plannedToday   bool             // true after planning has been done today
+	planningPicker *ui.Picker       // multi-select picker for planning
+	lastSessionIDs map[string]bool  // task IDs from last session (for pre-selection)
+	width          int
+	height         int
 }
 
 // NewToday creates a Today model, loading actions from SQLite.
 func NewToday(state AppState, c *cache.Cache) Today {
 	actions := make(map[string]string)
+	plannedToday := false
+	var lastSessionIDs map[string]bool
+
 	if c != nil {
 		today := time.Now().Format("2006-01-02")
 		if a, err := c.GetTodayActions(today); err == nil {
 			actions = a
 		}
+
+		if planned, err := c.IsTodayPlanned(today); err == nil {
+			plannedToday = planned
+		}
+
+		// Get last session's actions before clearing (for outstanding tasks)
+		if lastActions, _, err := c.GetLastSessionActions(today); err == nil && len(lastActions) > 0 {
+			lastSessionIDs = make(map[string]bool)
+			for taskID, action := range lastActions {
+				if taskID == "_planned" {
+					continue
+				}
+				if action == "forced" || action == "" {
+					lastSessionIDs[taskID] = true
+				}
+			}
+		}
+
 		_ = c.ClearExpiredTodayState(today)
 	}
+
 	t := Today{
-		state:        state,
-		cache:        c,
-		todayActions: actions,
+		state:          state,
+		cache:          c,
+		todayActions:   actions,
+		plannedToday:   plannedToday,
+		lastSessionIDs: lastSessionIDs,
 	}
-	t.recalculate()
+
+	if plannedToday || len(actions) > 0 {
+		t.recalculate()
+	}
+
 	return t
 }
 
@@ -60,6 +92,7 @@ func NewTodayWithState(state AppState, c *cache.Cache, actions map[string]string
 		state:        state,
 		cache:        c,
 		todayActions: actions,
+		plannedToday: true,
 	}
 	t.recalculate()
 	return t
