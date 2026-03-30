@@ -105,10 +105,16 @@ func (t *Today) openPlanningMode() {
 	}
 
 	var outstanding []api.Task
+	var dueSoon []api.Task
 	var other []api.Task
+	now := time.Now()
+	soonThreshold := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location()).Add(3 * 24 * time.Hour)
+
 	for _, task := range myTasks {
 		if t.lastSessionIDs[task.ID] {
 			outstanding = append(outstanding, task)
+		} else if due, ok := parseDueDate(task.DueDate); ok && !due.After(soonThreshold) {
+			dueSoon = append(dueSoon, task)
 		} else {
 			other = append(other, task)
 		}
@@ -135,6 +141,7 @@ func (t *Today) openPlanningMode() {
 		})
 	}
 	sortByPriorityDue(outstanding)
+	sortByPriorityDue(dueSoon)
 	sortByPriorityDue(other)
 
 	var items []ui.PickerItem
@@ -142,16 +149,21 @@ func (t *Today) openPlanningMode() {
 	if len(outstanding) > 0 {
 		items = append(items, ui.PickerItem{Label: "Outstanding from last session", Header: true})
 		for _, task := range outstanding {
-			label := t.planningLabel(task)
-			items = append(items, ui.PickerItem{ID: task.ID, Label: label})
+			items = append(items, t.planningPickerItem(task))
+		}
+	}
+
+	if len(dueSoon) > 0 {
+		items = append(items, ui.PickerItem{Label: "Due soon", Header: true})
+		for _, task := range dueSoon {
+			items = append(items, t.planningPickerItem(task))
 		}
 	}
 
 	if len(other) > 0 {
 		items = append(items, ui.PickerItem{Label: "Other assigned tasks", Header: true})
 		for _, task := range other {
-			label := t.planningLabel(task)
-			items = append(items, ui.PickerItem{ID: task.ID, Label: label})
+			items = append(items, t.planningPickerItem(task))
 		}
 	}
 
@@ -175,7 +187,7 @@ func (t *Today) openPlanningMode() {
 	t.planningMode = true
 }
 
-func (t *Today) planningLabel(task api.Task) string {
+func (t *Today) planningPickerItem(task api.Task) ui.PickerItem {
 	label := task.Name
 
 	if listName := t.listName(task.List.ID); listName != "" {
@@ -193,7 +205,19 @@ func (t *Today) planningLabel(task api.Task) string {
 		label += " — " + formatRelativeDate(due)
 	}
 
-	return label
+	var color lipgloss.Color
+	switch priorityRank(task.Priority) {
+	case 1:
+		color = ui.ColorRed
+	case 2:
+		color = ui.ColorYellow
+	case 3:
+		color = ui.ColorBlue
+	case 4:
+		color = ui.ColorFgDim
+	}
+
+	return ui.PickerItem{ID: task.ID, Label: label, Color: color}
 }
 
 // Resize sets the terminal dimensions.
@@ -646,13 +670,27 @@ func (t Today) View() string {
 				lipgloss.NewStyle().Foreground(ui.ColorBlue).Bold(true).Render("p") +
 				lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(" to enter planning mode."))
 		footer := ui.RenderFooter(t.emptyKeyBindings(), t.width)
-		return lipgloss.JoinVertical(lipgloss.Left, empty, footer)
+		emptyH := lipgloss.Height(empty)
+		footerH := lipgloss.Height(footer)
+		spacerH := t.height - emptyH - footerH - 1
+		if spacerH < 0 {
+			spacerH = 0
+		}
+		spacer := strings.Repeat("\n", spacerH)
+		return lipgloss.JoinVertical(lipgloss.Left, empty, spacer, footer)
 	}
 
 	if len(t.items) == 0 && !t.planningMode {
 		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n  No tasks for today. Press 'p' to plan or 'c' to auto-fill.\n")
 		footer := ui.RenderFooter(t.keyBindings(), t.width)
-		return lipgloss.JoinVertical(lipgloss.Left, empty, footer)
+		emptyH := lipgloss.Height(empty)
+		footerH := lipgloss.Height(footer)
+		spacerH := t.height - emptyH - footerH - 1
+		if spacerH < 0 {
+			spacerH = 0
+		}
+		spacer := strings.Repeat("\n", spacerH)
+		return lipgloss.JoinVertical(lipgloss.Left, empty, spacer, footer)
 	}
 
 	previewW := t.previewWidth()
@@ -876,7 +914,7 @@ func (t Today) renderPlanningOverlay(background string) string {
 		"space: toggle  a: auto-fill rest  enter: confirm  esc: cancel")
 	fullContent := pickerContent + "\n" + hint
 
-	overlayW := min(t.width-8, 70)
+	overlayW := min(t.width-4, 100)
 	overlayStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(ui.ColorBlue).

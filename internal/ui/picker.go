@@ -11,7 +11,8 @@ import (
 type PickerItem struct {
 	ID     string
 	Label  string
-	Header bool // If true, rendered as a non-selectable section divider
+	Header bool           // If true, rendered as a non-selectable section divider
+	Color  lipgloss.Color // Optional color for a priority bar prefix
 }
 
 // PickerResult is the message returned when the picker is confirmed or cancelled.
@@ -173,11 +174,16 @@ func (p Picker) View() string {
 			itemStyle = lipgloss.NewStyle().Foreground(ColorBlue).Bold(true)
 		}
 
+		priBar := ""
+		if item.Color != "" {
+			priBar = lipgloss.NewStyle().Foreground(item.Color).Render("▎") + " "
+		}
+
 		line := cursor
 		if check != "" {
 			line += check + " "
 		}
-		line += item.Label
+		line += priBar + item.Label
 
 		sb.WriteString(itemStyle.Render(line))
 		sb.WriteString("\n")
