@@ -270,6 +270,10 @@ func (t *Today) recalculate() {
 	result := calculateTodayList(myTasks, t.todayActions)
 	t.items = make([]TodayItem, 0, len(result))
 	for _, task := range result {
+		// Tasks in "done" status go to the bottom, not inline
+		if isClosedStatus(task.Status) {
+			continue
+		}
 		t.items = append(t.items, TodayItem{
 			Task:   task,
 			Action: t.todayActions[task.ID],
@@ -281,12 +285,29 @@ func (t *Today) recalculate() {
 			t.items = append(t.items, TodayItem{Task: task, Action: "done_for_day"})
 		}
 	}
-	// Append completed (closed) tasks that were on the list
+	// Append tasks in done/closed status at the bottom with strikethrough
+	seen := make(map[string]bool)
+	for _, task := range result {
+		if isClosedStatus(task.Status) && !seen[task.ID] {
+			seen[task.ID] = true
+			t.items = append(t.items, TodayItem{Task: task, Action: "completed"})
+		}
+	}
 	for _, task := range t.state.Tasks {
-		if !isClosedStatus(task.Status) {
+		if !isClosedStatus(task.Status) || seen[task.ID] {
 			continue
 		}
-		if t.todayActions[task.ID] != "" {
+		if t.todayActions[task.ID] == "" || t.todayActions[task.ID] == "_planned" {
+			continue
+		}
+		assigned := false
+		for _, a := range task.Assignees {
+			if t.state.CurrentUser != nil && a.ID == t.state.CurrentUser.ID {
+				assigned = true
+				break
+			}
+		}
+		if assigned {
 			t.items = append(t.items, TodayItem{Task: task, Action: "completed"})
 		}
 	}
@@ -296,7 +317,7 @@ func (t *Today) recalculate() {
 func (t *Today) assignedTasks() []api.Task {
 	var tasks []api.Task
 	for _, task := range t.state.Tasks {
-		if isClosedStatus(task.Status) {
+		if strings.ToLower(task.Status.Type) == "closed" {
 			continue
 		}
 		for _, a := range task.Assignees {
@@ -810,7 +831,7 @@ func (t Today) renderTable(width, height int) string {
 
 		selected := i == t.cursor
 		task := item.Task
-		doneForDay := item.Action == "done_for_day"
+		doneForDay := item.Action == "done_for_day" || item.Action == "completed" || isClosedStatus(task.Status)
 
 		// Priority color bar
 		priRank := priorityRank(task.Priority)
