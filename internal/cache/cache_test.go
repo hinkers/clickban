@@ -135,3 +135,64 @@ func TestRemoveTodayAction(t *testing.T) {
 		t.Fatalf("expected 0 actions after remove, got %d", len(actions))
 	}
 }
+
+func TestPlanningFlow(t *testing.T) {
+	c := testCache(t)
+
+	// Simulate a previous session (Friday)
+	friday := "2026-03-27"
+	c.SetTodayAction("task_a", "forced", friday)
+	c.SetTodayAction("task_b", "forced", friday)
+	c.SetTodayAction("task_c", "done_for_day", friday)
+	c.SetTodayAction("task_d", "ignored", friday)
+	c.SetTodayAction("_planned", "done", friday)
+
+	// New day (Monday)
+	monday := "2026-03-30"
+
+	// Check not yet planned
+	planned, _ := c.IsTodayPlanned(monday)
+	if planned {
+		t.Error("should not be planned yet")
+	}
+
+	// Get last session — must happen BEFORE writing monday's actions because
+	// task_id is PRIMARY KEY and monday writes will replace friday rows.
+	lastActions, date, err := c.GetLastSessionActions(monday)
+	if err != nil {
+		t.Fatalf("GetLastSessionActions: %v", err)
+	}
+	if date != friday {
+		t.Errorf("expected %s, got %s", friday, date)
+	}
+	if len(lastActions) != 5 {
+		t.Fatalf("expected 5 actions, got %d", len(lastActions))
+	}
+
+	// Simulate planning: force selected tasks and mark planned.
+	// Note: SetTodayAction upserts by task_id, so task_a's friday row is replaced.
+	c.SetTodayAction("task_a", "forced", monday)
+	c.SetTodayAction("_planned", "done", monday)
+
+	// Verify planned
+	planned, _ = c.IsTodayPlanned(monday)
+	if !planned {
+		t.Error("should be planned now")
+	}
+
+	// Clear expired state
+	c.ClearExpiredTodayState(monday)
+
+	// Friday's remaining actions (task_b, task_c, task_d) should be gone.
+	// task_a and _planned were already replaced by monday rows so they survive.
+	fridayActions, _ := c.GetTodayActions(friday)
+	if len(fridayActions) != 0 {
+		t.Errorf("expected 0 friday actions after clear, got %d", len(fridayActions))
+	}
+
+	// Monday's actions should survive
+	mondayActions, _ := c.GetTodayActions(monday)
+	if len(mondayActions) != 2 { // task_a + _planned
+		t.Errorf("expected 2 monday actions, got %d", len(mondayActions))
+	}
+}
