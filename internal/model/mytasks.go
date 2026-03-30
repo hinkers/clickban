@@ -111,9 +111,20 @@ func (m MyTasks) Update(msg tea.Msg) (MyTasks, tea.Cmd) {
 // View implements tea.Model.
 func (m MyTasks) View() string {
 	if len(m.tasks) == 0 {
-		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n  No tasks assigned to you.\n")
+		msg := "No tasks assigned to you."
+		if m.needsDataFilter {
+			msg = "No tasks needing data. Press ! to clear the filter."
+		}
+		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n  " + msg + "\n")
 		footer := ui.RenderFooter(m.keyBindings(), m.width)
-		return lipgloss.JoinVertical(lipgloss.Left, empty, footer)
+		emptyH := lipgloss.Height(empty)
+		footerH := lipgloss.Height(footer)
+		spacerH := m.height - emptyH - footerH - 1
+		if spacerH < 0 {
+			spacerH = 0
+		}
+		spacer := strings.Repeat("\n", spacerH)
+		return lipgloss.JoinVertical(lipgloss.Left, empty, spacer, footer)
 	}
 
 	previewW := m.previewWidth()
