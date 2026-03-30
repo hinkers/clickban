@@ -98,6 +98,104 @@ func NewTodayWithState(state AppState, c *cache.Cache, actions map[string]string
 	return t
 }
 
+func (t *Today) openPlanningMode() {
+	myTasks := t.assignedTasks()
+	if len(myTasks) == 0 {
+		return
+	}
+
+	var outstanding []api.Task
+	var other []api.Task
+	for _, task := range myTasks {
+		if t.lastSessionIDs[task.ID] {
+			outstanding = append(outstanding, task)
+		} else {
+			other = append(other, task)
+		}
+	}
+
+	sortByPriorityDue := func(tasks []api.Task) {
+		sort.SliceStable(tasks, func(i, j int) bool {
+			iDue := isDueOrOverdue(tasks[i])
+			jDue := isDueOrOverdue(tasks[j])
+			if iDue != jDue {
+				return iDue
+			}
+			iPri := priorityRank(tasks[i].Priority)
+			jPri := priorityRank(tasks[j].Priority)
+			if iPri != jPri {
+				return iPri < jPri
+			}
+			iDate, iOk := parseDueDate(tasks[i].DueDate)
+			jDate, jOk := parseDueDate(tasks[j].DueDate)
+			if iOk && jOk {
+				return iDate.Before(jDate)
+			}
+			return iOk && !jOk
+		})
+	}
+	sortByPriorityDue(outstanding)
+	sortByPriorityDue(other)
+
+	var items []ui.PickerItem
+
+	if len(outstanding) > 0 {
+		items = append(items, ui.PickerItem{Label: "Outstanding from last session", Header: true})
+		for _, task := range outstanding {
+			label := t.planningLabel(task)
+			items = append(items, ui.PickerItem{ID: task.ID, Label: label})
+		}
+	}
+
+	if len(other) > 0 {
+		items = append(items, ui.PickerItem{Label: "Other assigned tasks", Header: true})
+		for _, task := range other {
+			label := t.planningLabel(task)
+			items = append(items, ui.PickerItem{ID: task.ID, Label: label})
+		}
+	}
+
+	if len(items) == 0 {
+		return
+	}
+
+	p := ui.NewPicker("Plan Your Day", items, true)
+
+	// Pre-select outstanding tasks
+	for i, item := range items {
+		if item.Header {
+			continue
+		}
+		if t.lastSessionIDs[item.ID] {
+			p.SetSelected(i, true)
+		}
+	}
+
+	t.planningPicker = &p
+	t.planningMode = true
+}
+
+func (t *Today) planningLabel(task api.Task) string {
+	label := task.Name
+
+	if listName := t.listName(task.List.ID); listName != "" {
+		label += " [" + listName + "]"
+	}
+
+	if task.TimeEstimate > 0 {
+		rem := remainingTimeMs(task)
+		if rem > 0 {
+			label += " (" + ui.FormatDuration(rem) + " left)"
+		}
+	}
+
+	if due, ok := parseDueDate(task.DueDate); ok {
+		label += " — " + formatRelativeDate(due)
+	}
+
+	return label
+}
+
 // Resize sets the terminal dimensions.
 func (t Today) Resize(w, h int) Today {
 	t.width = w
