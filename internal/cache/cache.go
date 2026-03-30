@@ -126,6 +126,40 @@ func (c *Cache) GetTodayActions(date string) (map[string]string, error) {
 	return actions, rows.Err()
 }
 
+// GetLastSessionActions returns actions from the most recent date before `today`.
+// Returns the actions map, the date string, and any error.
+// If no previous session exists, returns empty map, empty string, nil.
+func (c *Cache) GetLastSessionActions(today string) (map[string]string, string, error) {
+	var date string
+	err := c.db.QueryRow(
+		`SELECT DISTINCT date FROM today_state WHERE date < ? ORDER BY date DESC LIMIT 1`,
+		today,
+	).Scan(&date)
+	if err != nil {
+		// No previous session
+		return make(map[string]string), "", nil
+	}
+
+	actions, err := c.GetTodayActions(date)
+	if err != nil {
+		return nil, "", err
+	}
+	return actions, date, nil
+}
+
+// IsTodayPlanned checks if the planning sentinel exists for the given date.
+func (c *Cache) IsTodayPlanned(today string) (bool, error) {
+	var count int
+	err := c.db.QueryRow(
+		`SELECT COUNT(*) FROM today_state WHERE task_id = '_planned' AND date = ?`,
+		today,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ClearExpiredTodayState removes all today_state rows not matching the given date.
 func (c *Cache) ClearExpiredTodayState(today string) error {
 	_, err := c.db.Exec(`DELETE FROM today_state WHERE date != ?`, today)
