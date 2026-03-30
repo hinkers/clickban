@@ -9,8 +9,9 @@ import (
 
 // PickerItem represents an item in the picker list.
 type PickerItem struct {
-	ID    string
-	Label string
+	ID     string
+	Label  string
+	Header bool // If true, rendered as a non-selectable section divider
 }
 
 // PickerResult is the message returned when the picker is confirmed or cancelled.
@@ -30,11 +31,18 @@ type Picker struct {
 
 // NewPicker creates a new Picker model.
 func NewPicker(title string, items []PickerItem, multi bool) Picker {
+	cursor := 0
+	for cursor < len(items) && items[cursor].Header {
+		cursor++
+	}
+	if cursor >= len(items) {
+		cursor = 0
+	}
 	return Picker{
 		title:    title,
 		items:    items,
 		multi:    multi,
-		cursor:   0,
+		cursor:   cursor,
 		selected: make(map[int]bool),
 	}
 }
@@ -57,6 +65,11 @@ func (p *Picker) SetSelected(index int, val bool) {
 	p.selected[index] = val
 }
 
+// Items returns the picker's items slice.
+func (p Picker) Items() []PickerItem {
+	return p.items
+}
+
 // Init implements tea.Model.
 func (p Picker) Init() tea.Cmd {
 	return nil
@@ -69,16 +82,28 @@ func (p Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "j", "down":
 			if len(p.items) > 0 {
-				p.cursor = (p.cursor + 1) % len(p.items)
+				start := p.cursor
+				for {
+					p.cursor = (p.cursor + 1) % len(p.items)
+					if !p.items[p.cursor].Header || p.cursor == start {
+						break
+					}
+				}
 			}
 
 		case "k", "up":
 			if len(p.items) > 0 {
-				p.cursor = (p.cursor - 1 + len(p.items)) % len(p.items)
+				start := p.cursor
+				for {
+					p.cursor = (p.cursor - 1 + len(p.items)) % len(p.items)
+					if !p.items[p.cursor].Header || p.cursor == start {
+						break
+					}
+				}
 			}
 
 		case " ":
-			if p.multi {
+			if p.multi && !p.items[p.cursor].Header {
 				p.selected[p.cursor] = !p.selected[p.cursor]
 			}
 
@@ -119,6 +144,16 @@ func (p Picker) View() string {
 	sb.WriteString("\n\n")
 
 	for i, item := range p.items {
+		if item.Header {
+			headerStyle := lipgloss.NewStyle().
+				Foreground(ColorFgBright).
+				Bold(true).
+				MarginTop(1)
+			sb.WriteString(headerStyle.Render("── " + item.Label + " ──"))
+			sb.WriteString("\n")
+			continue
+		}
+
 		cursor := "  "
 		if i == p.cursor {
 			cursor = "> "
