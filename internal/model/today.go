@@ -224,7 +224,7 @@ func (t *Today) ClearWantsDetail() {
 
 // HasOverlay returns true if a picker overlay is active.
 func (t *Today) HasOverlay() bool {
-	return t.forcePicker != nil
+	return t.forcePicker != nil || t.planningPicker != nil
 }
 
 // TodayActions returns the current actions map.
@@ -639,8 +639,18 @@ func (t *Today) forcePickerItems() []ui.PickerItem {
 
 // View renders the Today view.
 func (t Today) View() string {
-	if len(t.items) == 0 {
-		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n  No tasks for today. Press 'c' to calculate.\n")
+	// Show planning prompt if not yet planned and no items
+	if !t.plannedToday && len(t.items) == 0 && !t.planningMode {
+		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Padding(2, 4).Render(
+			"No tasks planned for today.\n\nPress " +
+				lipgloss.NewStyle().Foreground(ui.ColorBlue).Bold(true).Render("p") +
+				lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(" to enter planning mode."))
+		footer := ui.RenderFooter(t.emptyKeyBindings(), t.width)
+		return lipgloss.JoinVertical(lipgloss.Left, empty, footer)
+	}
+
+	if len(t.items) == 0 && !t.planningMode {
+		empty := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render("\n  No tasks for today. Press 'p' to plan or 'c' to auto-fill.\n")
 		footer := ui.RenderFooter(t.keyBindings(), t.width)
 		return lipgloss.JoinVertical(lipgloss.Left, empty, footer)
 	}
@@ -663,7 +673,12 @@ func (t Today) View() string {
 	footer := ui.RenderFooter(t.keyBindings(), t.width)
 	result := lipgloss.JoinVertical(lipgloss.Left, content, footer)
 
-	// Overlay picker
+	// Overlay: planning picker
+	if t.planningPicker != nil {
+		result = t.renderPlanningOverlay(result)
+	}
+
+	// Overlay: force picker
 	if t.forcePicker != nil {
 		overlayContent := t.forcePicker.View()
 		overlayStyle := lipgloss.NewStyle().
@@ -854,6 +869,35 @@ func (t Today) renderTable(width, height int) string {
 		Render(sb.String())
 }
 
+func (t Today) renderPlanningOverlay(background string) string {
+	pickerContent := t.planningPicker.View()
+
+	hint := lipgloss.NewStyle().Foreground(ui.ColorFgDim).MarginTop(1).Render(
+		"space: toggle  a: auto-fill rest  enter: confirm  esc: cancel")
+	fullContent := pickerContent + "\n" + hint
+
+	overlayW := min(t.width-8, 70)
+	overlayStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(ui.ColorBlue).
+		Background(ui.ColorCardBg).
+		Padding(1, 2).
+		Width(overlayW)
+	overlayBox := overlayStyle.Render(fullContent)
+
+	ovH := lipgloss.Height(overlayBox)
+	ovW := lipgloss.Width(overlayBox)
+	topPad := max(0, (t.height-ovH)/2)
+	leftPad := max(0, (t.width-ovW)/2)
+
+	leftStr := strings.Repeat(" ", leftPad)
+	lines := strings.Split(overlayBox, "\n")
+	for i, line := range lines {
+		lines[i] = leftStr + line
+	}
+	return strings.Repeat("\n", topPad) + strings.Join(lines, "\n")
+}
+
 func (t Today) previewWidth() int {
 	if t.width < 100 {
 		return 0
@@ -865,11 +909,21 @@ func (t Today) keyBindings() []ui.KeyBinding {
 	return []ui.KeyBinding{
 		{Key: "j/k", Label: "navigate"},
 		{Key: "enter", Label: "detail"},
+		{Key: "p", Label: "plan"},
 		{Key: "c", Label: "recalculate"},
 		{Key: "f", Label: "force add"},
 		{Key: "i", Label: "ignore"},
 		{Key: "d", Label: "done for day"},
 		{Key: "u", Label: "undo"},
+		{Key: "1/2/3", Label: "switch view"},
+		{Key: "r", Label: "refresh"},
+		{Key: "q", Label: "quit"},
+	}
+}
+
+func (t Today) emptyKeyBindings() []ui.KeyBinding {
+	return []ui.KeyBinding{
+		{Key: "p", Label: "plan day"},
 		{Key: "1/2/3", Label: "switch view"},
 		{Key: "r", Label: "refresh"},
 		{Key: "q", Label: "quit"},
