@@ -239,10 +239,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Open the new task in detail view
 			a.detailFrom = a.view
 			a.detail = NewDetail(*msg.Task, a.state).Resize(a.width, a.height-1)
+			a.detail.SetPlannedToday(a.isTaskForcedToday(msg.Task.ID))
 			a.view = ViewDetail
 			a.statusText = "Task created"
 			return a, a.detail.Init()
 		}
+
+	case ToggleTodayForceMsg:
+		if a.cache != nil {
+			actions := a.today.TodayActions()
+			taskID := msg.TaskID
+			forced := false
+			if actions[taskID] == "forced" {
+				a.today.removeAction(taskID)
+			} else {
+				a.today.setAction(taskID, "forced")
+				forced = true
+			}
+			a.today.recalculate()
+			return a, func() tea.Msg {
+				return TodayForceUpdatedMsg{TaskID: taskID, Forced: forced}
+			}
+		}
+		return a, nil
 
 	case tea.KeyMsg:
 		// Route to create overlays if active
@@ -324,6 +343,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if task.ID == a.state.RunningTaskID {
 							a.detailFrom = a.view
 							a.detail = NewDetail(task, a.state).Resize(a.width, a.height-1)
+							a.detail.SetPlannedToday(a.isTaskForcedToday(task.ID))
 							a.view = ViewDetail
 							return a, a.detail.Init()
 						}
@@ -353,6 +373,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if task != nil {
 					a.detailFrom = a.view
 					a.detail = NewDetail(*task, a.state).Resize(a.width, a.height-1)
+					a.detail.SetPlannedToday(a.isTaskForcedToday(task.ID))
 					a.view = ViewDetail
 					return a, a.detail.Init()
 				}
@@ -387,6 +408,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sel := a.today.WantsDetail(); sel != nil {
 				a.detailFrom = ViewToday
 				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
+				a.detail.SetPlannedToday(a.isTaskForcedToday(sel.ID))
 				a.view = ViewDetail
 				a.today.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -400,6 +422,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sel := a.kanban.WantsDetail(); sel != nil {
 				a.detailFrom = ViewKanban
 				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
+				a.detail.SetPlannedToday(a.isTaskForcedToday(sel.ID))
 				a.view = ViewDetail
 				a.kanban.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -412,6 +435,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sel := a.myTasks.WantsDetail(); sel != nil {
 				a.detailFrom = ViewMyTasks
 				a.detail = NewDetail(*sel, a.state).Resize(a.width, a.height-1)
+				a.detail.SetPlannedToday(a.isTaskForcedToday(sel.ID))
 				a.view = ViewDetail
 				a.myTasks.ClearWantsDetail()
 				return a, a.detail.Init()
@@ -513,6 +537,10 @@ func (a App) View() string {
 	}
 
 	return result
+}
+
+func (a *App) isTaskForcedToday(taskID string) bool {
+	return a.today.TodayActions()[taskID] == "forced"
 }
 
 func (a *App) propagateDetailUpdates() {

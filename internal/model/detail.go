@@ -87,6 +87,11 @@ func (d Detail) Resize(w, h int) Detail {
 	return d
 }
 
+// SetPlannedToday sets the initial planned-for-today state.
+func (d *Detail) SetPlannedToday(planned bool) {
+	d.plannedToday = planned
+}
+
 // HasOverlay returns true if an overlay is currently open.
 func (d *Detail) HasOverlay() bool {
 	return d.overlay != OverlayNone
