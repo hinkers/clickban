@@ -36,6 +36,7 @@ const (
 	OverlayTimer
 	OverlayTimeEstimate
 	OverlayDueDate
+	OverlayTimeEntries
 )
 
 // Detail is the task detail model.
@@ -50,11 +51,15 @@ type Detail struct {
 	cmtCursor int
 
 	// overlay sub-models
-	picker      ui.Picker
-	editor      ui.Editor
-	multiEditor *ui.MultiLineEditor
-	timer       ui.TimerInput
-	runningTimer *api.RunningTimer // non-nil when a timer is running for this task
+	picker         ui.Picker
+	editor         ui.Editor
+	multiEditor    *ui.MultiLineEditor
+	dueDateEditor  ui.DueDateEditor
+	timer          ui.TimerInput
+	runningTimer    *api.RunningTimer // non-nil when a timer is running for this task
+	timeEntries     []api.TimeEntry
+	timeEntriesList ui.TimeEntriesList
+	editingEntryID  string // entry ID being edited, used during edit flow
 
 	wantsBack   bool
 	updatedTask *api.Task
@@ -122,9 +127,15 @@ type taskRefreshedMsg struct {
 // timerTickMsg triggers a re-render for the live timer display.
 type timerTickMsg struct{}
 
+// timeEntriesLoadedMsg is the result of loading time entries.
+type timeEntriesLoadedMsg struct {
+	entries []api.TimeEntry
+	err     error
+}
+
 // Init implements tea.Model — load comments.
 func (d Detail) Init() tea.Cmd {
-	return tea.Batch(d.loadComments(), d.loadRunningTimer())
+	return tea.Batch(d.loadComments(), d.loadRunningTimer(), d.loadTimeEntries())
 }
 
 func (d Detail) loadComments() tea.Cmd {
@@ -151,6 +162,15 @@ func (d Detail) loadRunningTimer() tea.Cmd {
 	return func() tea.Msg {
 		timer, err := client.GetRunningTimer(teamID)
 		return runningTimerMsg{timer: timer, err: err}
+	}
+}
+
+func (d Detail) loadTimeEntries() tea.Cmd {
+	client := d.state.Client
+	taskID := d.task.ID
+	return func() tea.Msg {
+		entries, err := client.GetTimeEntries(taskID)
+		return timeEntriesLoadedMsg{entries: entries, err: err}
 	}
 }
 
@@ -191,6 +211,12 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 		}
 		return d, nil
 
+	case timeEntriesLoadedMsg:
+		if msg.err == nil {
+			d.timeEntries = msg.entries
+		}
+		return d, nil
+
 	case timerTickMsg:
 		if d.runningTimer != nil {
 			return d, tea.Tick(time.Second, func(t time.Time) tea.Msg { return timerTickMsg{} })
@@ -209,6 +235,9 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 
 	case ui.TimerResult:
 		return d.handleTimerResult(msg)
+
+	case ui.TimeEntryAction:
+		return d.handleTimeEntryAction(msg)
 
 	case ui.ExternalEditorResult:
 		return d.handleExternalEditorResult(msg)
@@ -242,13 +271,21 @@ func (d Detail) delegateToOverlay(msg tea.Msg) (Detail, tea.Cmd) {
 			return d, cmd
 		}
 		return d, nil
-	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
+	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate:
 		m, cmd := d.editor.Update(msg)
 		d.editor = m.(ui.Editor)
+		return d, cmd
+	case OverlayDueDate:
+		m, cmd := d.dueDateEditor.Update(msg)
+		d.dueDateEditor = m.(ui.DueDateEditor)
 		return d, cmd
 	case OverlayTimer:
 		m, cmd := d.timer.Update(msg)
 		d.timer = m.(ui.TimerInput)
+		return d, cmd
+	case OverlayTimeEntries:
+		m, cmd := d.timeEntriesList.Update(msg)
+		d.timeEntriesList = m.(ui.TimeEntriesList)
 		return d, cmd
 	}
 	return d, nil
@@ -378,8 +415,15 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 	case "D":
 		if d.focus == FocusMain {
 			d.overlay = OverlayDueDate
-			d.editor = ui.NewEditor("Due Date (YYYY-MM-DD)", "")
-			return d, d.editor.Init()
+			d.dueDateEditor = ui.NewDueDateEditor()
+			return d, d.dueDateEditor.Init()
+		}
+
+	case "L":
+		if d.focus == FocusMain {
+			d.timeEntriesList = ui.NewTimeEntriesList(d.timeEntries)
+			d.overlay = OverlayTimeEntries
+			return d, nil
 		}
 
 	case "c":
@@ -418,6 +462,8 @@ func (d Detail) handlePickerResult(res ui.PickerResult) (Detail, tea.Cmd) {
 		newStatusLower := strings.ToLower(newStatus)
 		d.task.Status.Status = newStatus
 		d.task.Status.ID = res.Selected[0].ID
+		// Look up the status type so isClosedStatus works immediately
+		d.task.Status.Type = d.lookupStatusType(res.Selected[0].ID)
 		updated := d.task
 		d.updatedTask = &updated
 		return d, func() tea.Msg {
@@ -621,15 +667,109 @@ func (d Detail) handleExternalEditorResult(res ui.ExternalEditorResult) (Detail,
 	}
 }
 
+func (d Detail) handleTimeEntryAction(action ui.TimeEntryAction) (Detail, tea.Cmd) {
+	switch action.Action {
+	case "close":
+		d.overlay = OverlayNone
+		return d, nil
+
+	case "delete":
+		client := d.state.Client
+		teamID := d.state.TeamID
+		entryID := action.Entry.ID
+		durationMs, _ := strconv.ParseInt(action.Entry.Duration, 10, 64)
+
+		// Remove from local list
+		d.timeEntriesList.RemoveEntry(entryID)
+		for i, e := range d.timeEntries {
+			if e.ID == entryID {
+				d.timeEntries = append(d.timeEntries[:i], d.timeEntries[i+1:]...)
+				break
+			}
+		}
+		d.task.TimeSpent -= durationMs
+		if d.task.TimeSpent < 0 {
+			d.task.TimeSpent = 0
+		}
+		updated := d.task
+		d.updatedTask = &updated
+
+		return d, func() tea.Msg {
+			if err := client.DeleteTimeEntry(teamID, entryID); err != nil {
+				return StatusMsg{Text: "delete failed: " + err.Error()}
+			}
+			return StatusMsg{Text: "Time entry deleted"}
+		}
+
+	case "edit":
+		d.editingEntryID = action.Entry.ID
+		d.overlay = OverlayTimer
+		d.timer = ui.NewTimerInputWithRunning(false)
+		return d, nil
+	}
+
+	return d, nil
+}
+
 func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 	d.overlay = OverlayNone
 	if res.Cancelled {
+		d.editingEntryID = ""
 		return d, nil
 	}
 
 	client := d.state.Client
 	taskID := d.task.ID
 	teamID := d.state.TeamID
+
+	// If editing an existing entry, update it instead of creating new
+	if d.editingEntryID != "" {
+		entryID := d.editingEntryID
+		d.editingEntryID = ""
+
+		var newStart, newEnd int64
+		var newDurationMs int64
+
+		if res.Mode == ui.TimerModeDuration {
+			newDurationMs = res.DurationMs
+			now := time.Now()
+			newStart = now.Add(-time.Duration(newDurationMs) * time.Millisecond).UnixMilli()
+			newEnd = now.UnixMilli()
+		} else if res.Mode == ui.TimerModeTimeRange {
+			newStart = res.Start.UnixMilli()
+			newEnd = res.End.UnixMilli()
+			newDurationMs = res.End.Sub(res.Start).Milliseconds()
+		} else {
+			// Live mode doesn't apply to edits
+			return d, nil
+		}
+
+		// Update local state: adjust time spent
+		for i, e := range d.timeEntries {
+			if e.ID == entryID {
+				oldDurationMs, _ := strconv.ParseInt(e.Duration, 10, 64)
+				d.task.TimeSpent = d.task.TimeSpent - oldDurationMs + newDurationMs
+				d.timeEntries[i].Duration = fmt.Sprintf("%d", newDurationMs)
+				d.timeEntries[i].Start = fmt.Sprintf("%d", newStart)
+				d.timeEntries[i].End = fmt.Sprintf("%d", newEnd)
+				break
+			}
+		}
+		updated := d.task
+		d.updatedTask = &updated
+
+		return d, func() tea.Msg {
+			req := &api.UpdateTimeEntryRequest{
+				Start:    newStart,
+				End:      newEnd,
+				Duration: newDurationMs,
+			}
+			if err := client.UpdateTimeEntry(teamID, entryID, req); err != nil {
+				return StatusMsg{Text: "update failed: " + err.Error()}
+			}
+			return StatusMsg{Text: "Time entry updated"}
+		}
+	}
 
 	if res.Mode == ui.TimerModeLive {
 		if res.Action == "start" {
@@ -735,6 +875,7 @@ func (d Detail) View() string {
 			{Key: "t", Label: timerLabel},
 			{Key: "T", Label: "estimate"},
 			{Key: "D", Label: "due date"},
+			{Key: "L", Label: "time log"},
 			{Key: "c", Label: "comment"},
 			{Key: "tab", Label: "comments"},
 			{Key: "q", Label: "back"},
@@ -765,10 +906,14 @@ func (d Detail) renderWithOverlay() string {
 		if d.multiEditor != nil {
 			overlayContent = d.multiEditor.View()
 		}
-	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate, OverlayDueDate:
+	case OverlayTitle, OverlayComment, OverlayEditComment, OverlayTimeEstimate:
 		overlayContent = d.editor.View()
+	case OverlayDueDate:
+		overlayContent = d.dueDateEditor.View()
 	case OverlayTimer:
 		overlayContent = d.timer.View()
+	case OverlayTimeEntries:
+		overlayContent = d.timeEntriesList.View()
 	}
 
 	overlayWidth := 60
@@ -873,9 +1018,11 @@ func (d Detail) renderMain(width, height int) string {
 
 	// Time
 	if d.task.TimeSpent > 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(
-			"Time spent: " + ui.FormatDuration(d.task.TimeSpent),
-		))
+		timeStr := "Time spent: " + ui.FormatDuration(d.task.TimeSpent)
+		if len(d.timeEntries) > 0 {
+			timeStr += fmt.Sprintf(" (%d entries)", len(d.timeEntries))
+		}
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.ColorFgDim).Render(timeStr))
 		sb.WriteString("\n")
 	}
 
@@ -1002,6 +1149,25 @@ func (d Detail) mainWidth() int {
 		return d.width
 	}
 	return d.width * 2 / 3
+}
+
+// lookupStatusType finds the type (e.g. "done", "closed", "active") for a status ID.
+func (d Detail) lookupStatusType(statusID string) string {
+	for _, list := range d.state.Lists {
+		if list.ID == d.task.List.ID {
+			for _, s := range list.Statuses {
+				if s.ID == statusID {
+					return s.Type
+				}
+			}
+		}
+	}
+	for _, s := range d.state.Statuses {
+		if s.ID == statusID {
+			return s.Type
+		}
+	}
+	return ""
 }
 
 // statusPickerItems returns picker items for the task's list statuses.
