@@ -301,3 +301,10 @@ type CreateTimeEntryRequest struct {
 	Billable    bool   `json:"billable,omitempty"`
 	TaskID      string `json:"tid,omitempty"`
 }
+
+// UpdateTimeEntryRequest is the payload for updating a time entry.
+type UpdateTimeEntryRequest struct {
+	Start    int64 `json:"start"`
+	End      int64 `json:"end,omitempty"`
+	Duration int64 `json:"duration"`
+}
