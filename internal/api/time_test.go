@@ -17,7 +17,13 @@ func TestGetTimeEntries(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
-				{"id": "te1", "duration": "3600000"},
+				{
+					"user": map[string]interface{}{"id": 1, "username": "testuser"},
+					"time": 3600000,
+					"intervals": []map[string]interface{}{
+						{"id": "te1", "start": "1000000", "end": "4600000", "time": "3600000"},
+					},
+				},
 			},
 		})
 	}))
@@ -33,6 +39,12 @@ func TestGetTimeEntries(t *testing.T) {
 	}
 	if entries[0].ID != "te1" {
 		t.Errorf("expected entry ID 'te1', got %q", entries[0].ID)
+	}
+	if entries[0].User.Username != "testuser" {
+		t.Errorf("expected username 'testuser', got %q", entries[0].User.Username)
+	}
+	if entries[0].Duration != "3600000" {
+		t.Errorf("expected duration '3600000', got %q", entries[0].Duration)
 	}
 }
 

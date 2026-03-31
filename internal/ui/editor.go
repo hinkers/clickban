@@ -96,8 +96,9 @@ func (e Editor) View() string {
 
 // MultiLineEditor is a Bubble Tea model for multiline text editing.
 type MultiLineEditor struct {
-	title string
-	input textarea.Model
+	title      string
+	input      textarea.Model
+	confirmEsc bool // true when showing the "save before closing?" prompt
 }
 
 // NewMultiLineEditor creates a new multiline editor.
@@ -125,11 +126,28 @@ func (e MultiLineEditor) Init() tea.Cmd {
 func (e MultiLineEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if e.confirmEsc {
+			switch msg.String() {
+			case "s":
+				val := e.input.Value()
+				return e, func() tea.Msg {
+					return EditorResult{Value: val, Cancelled: false}
+				}
+			case "d":
+				return e, func() tea.Msg {
+					return EditorResult{Cancelled: true}
+				}
+			case "esc", "q":
+				e.confirmEsc = false
+				return e, nil
+			}
+			return e, nil
+		}
+
 		switch {
 		case msg.Type == tea.KeyEsc:
-			return e, func() tea.Msg {
-				return EditorResult{Cancelled: true}
-			}
+			e.confirmEsc = true
+			return e, nil
 		case msg.Type == tea.KeyCtrlS:
 			val := e.input.Value()
 			return e, func() tea.Msg {
@@ -156,7 +174,14 @@ func (e MultiLineEditor) View() string {
 	sb.WriteString("\n\n")
 
 	hintStyle := lipgloss.NewStyle().Foreground(ColorFgDim)
-	sb.WriteString(hintStyle.Render("ctrl+s: save • esc: cancel"))
+	if e.confirmEsc {
+		promptStyle := lipgloss.NewStyle().Foreground(ColorYellow).Bold(true)
+		sb.WriteString(promptStyle.Render("Save before closing?"))
+		sb.WriteString("\n")
+		sb.WriteString(hintStyle.Render("s: save  •  d: discard  •  esc: back to editing"))
+	} else {
+		sb.WriteString(hintStyle.Render("ctrl+s: save • esc: close"))
+	}
 
 	return sb.String()
 }

@@ -714,7 +714,13 @@ func (d Detail) handleTimeEntryAction(action ui.TimeEntryAction) (Detail, tea.Cm
 	case "edit":
 		d.editingEntryID = action.Entry.ID
 		d.overlay = OverlayTimer
-		d.timer = ui.NewTimerInputWithRunning(false)
+		// Pre-fill with the entry's current time range including date
+		startMs, _ := strconv.ParseInt(action.Entry.Start, 10, 64)
+		endMs, _ := strconv.ParseInt(action.Entry.End, 10, 64)
+		startTime := time.UnixMilli(startMs)
+		endTime := time.UnixMilli(endMs)
+		prefill := fmt.Sprintf("%s to %s", startTime.Format("Jan 2 3:04pm"), endTime.Format("Jan 2 3:04pm"))
+		d.timer = ui.NewTimerInputForRange(prefill)
 		return d, nil
 	}
 
@@ -937,6 +943,8 @@ func (d Detail) renderWithOverlay() string {
 	overlayWidth := 60
 	if d.overlay == OverlayDescription {
 		overlayWidth = max(60, d.width-10)
+	} else if d.overlay == OverlayTimeEntries {
+		overlayWidth = 80
 	}
 	overlayStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).

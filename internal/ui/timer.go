@@ -63,6 +63,21 @@ func NewTimerInputWithRunning(running bool) TimerInput {
 	return t
 }
 
+// NewTimerInputForRange creates a TimerInput pre-filled in time range mode.
+func NewTimerInputForRange(prefill string) TimerInput {
+	ti := textinput.New()
+	ti.Placeholder = "e.g. 10:30am to 12:00pm"
+	ti.CharLimit = 64
+	ti.SetValue(prefill)
+	ti.SetCursor(len(prefill))
+	ti.Focus()
+
+	return TimerInput{
+		mode:  TimerModeTimeRange,
+		input: ti,
+	}
+}
+
 // Init implements tea.Model.
 func (t TimerInput) Init() tea.Cmd {
 	return textinput.Blink
@@ -75,7 +90,7 @@ func (t TimerInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch t.mode {
 		case TimerModeMenu:
 			switch msg.String() {
-			case "1":
+			case "s":
 				action := "start"
 				if t.timerRunning {
 					action = "stop"
@@ -83,17 +98,17 @@ func (t TimerInput) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return t, func() tea.Msg {
 					return TimerResult{Mode: TimerModeLive, Action: action}
 				}
-			case "2":
+			case "m":
 				t.mode = TimerModeDuration
 				t.input.Placeholder = "e.g. 2h30m, 1h, 45m"
 				t.input.Focus()
 				return t, textinput.Blink
-			case "3":
+			case "r":
 				t.mode = TimerModeTimeRange
 				t.input.Placeholder = "e.g. 10:30am to 12:00pm"
 				t.input.Focus()
 				return t, textinput.Blink
-			case "esc":
+			case "esc", "q":
 				return t, func() tea.Msg {
 					return TimerResult{Cancelled: true}
 				}
@@ -152,13 +167,13 @@ func (t TimerInput) View() string {
 		if t.timerRunning {
 			timerLabel = "Stop timer"
 		}
-		sb.WriteString(itemStyle.Render("1. " + timerLabel))
+		sb.WriteString(itemStyle.Render("s. " + timerLabel))
 		sb.WriteString("\n")
-		sb.WriteString(itemStyle.Render("2. Manual duration"))
+		sb.WriteString(itemStyle.Render("m. Manual duration"))
 		sb.WriteString("\n")
-		sb.WriteString(itemStyle.Render("3. Time range"))
+		sb.WriteString(itemStyle.Render("r. Time range"))
 		sb.WriteString("\n\n")
-		sb.WriteString(hintStyle.Render("1/2/3: select  •  esc: cancel"))
+		sb.WriteString(hintStyle.Render("s/m/r: select  •  q/esc: cancel"))
 
 	case TimerModeDuration:
 		sb.WriteString(t.input.View())
@@ -220,12 +235,48 @@ func ParseDuration(s string) (int64, error) {
 // timeRegexp matches times like "10:30am", "12:00pm", "9am"
 var timeRegexp = regexp.MustCompile(`(?i)^(\d{1,2})(?::(\d{2}))?(am|pm)$`)
 
+// dateTimeRegexp matches "Mar 26 1:44pm" or "Mar 26 1:44pm" style
+var dateTimeRegexp = regexp.MustCompile(`(?i)^([A-Za-z]+)\s+(\d{1,2})\s+(\d{1,2})(?::(\d{2}))?(am|pm)$`)
+
 // parseTimeOfDay parses a time-of-day string relative to a reference date.
+// Supports "10:30am" (uses ref date) or "Mar 26 1:44pm" (uses specified date + ref year).
 func parseTimeOfDay(s string, ref time.Time) (time.Time, error) {
 	s = strings.TrimSpace(s)
+
+	// Try date+time format first: "Mar 26 1:44pm"
+	if dm := dateTimeRegexp.FindStringSubmatch(s); dm != nil {
+		month, err := parseMonth(dm[1])
+		if err != nil {
+			return time.Time{}, err
+		}
+		day, err := strconv.Atoi(dm[2])
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid day %q", dm[2])
+		}
+		hour, err := strconv.Atoi(dm[3])
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid hour %q", dm[3])
+		}
+		minute := 0
+		if dm[4] != "" {
+			minute, err = strconv.Atoi(dm[4])
+			if err != nil {
+				return time.Time{}, fmt.Errorf("invalid minute %q", dm[4])
+			}
+		}
+		ampm := strings.ToLower(dm[5])
+		if ampm == "pm" && hour != 12 {
+			hour += 12
+		} else if ampm == "am" && hour == 12 {
+			hour = 0
+		}
+		return time.Date(ref.Year(), month, day, hour, minute, 0, 0, ref.Location()), nil
+	}
+
+	// Fall back to time-only format: "10:30am"
 	matches := timeRegexp.FindStringSubmatch(s)
 	if matches == nil {
-		return time.Time{}, fmt.Errorf("invalid time format %q: expected e.g. 10:30am, 2pm", s)
+		return time.Time{}, fmt.Errorf("invalid time format %q: expected e.g. 10:30am, Mar 26 1:44pm", s)
 	}
 
 	hour, err := strconv.Atoi(matches[1])
@@ -253,6 +304,21 @@ func parseTimeOfDay(s string, ref time.Time) (time.Time, error) {
 	}
 
 	return time.Date(ref.Year(), ref.Month(), ref.Day(), hour, minute, 0, 0, ref.Location()), nil
+}
+
+// parseMonth converts a month abbreviation to time.Month.
+func parseMonth(s string) (time.Month, error) {
+	months := map[string]time.Month{
+		"jan": time.January, "feb": time.February, "mar": time.March,
+		"apr": time.April, "may": time.May, "jun": time.June,
+		"jul": time.July, "aug": time.August, "sep": time.September,
+		"oct": time.October, "nov": time.November, "dec": time.December,
+	}
+	m, ok := months[strings.ToLower(s[:3])]
+	if !ok {
+		return 0, fmt.Errorf("invalid month %q", s)
+	}
+	return m, nil
 }
 
 // ParseTimeRange parses a time range string like "10:30am to 12:00pm" or "10:30am to now"

@@ -12,7 +12,15 @@ func (c *Client) GetTimeEntries(taskID string) ([]TimeEntry, error) {
 	if err := c.Get(fmt.Sprintf("/task/%s/time", taskID), &resp); err != nil {
 		return nil, fmt.Errorf("get time entries for task %s: %w", taskID, err)
 	}
-	return resp.Data, nil
+	// Flatten per-user groups into a single list of entries
+	var entries []TimeEntry
+	for _, group := range resp.Data {
+		for _, interval := range group.Intervals {
+			interval.User = group.User
+			entries = append(entries, interval)
+		}
+	}
+	return entries, nil
 }
 
 func (c *Client) CreateTimeEntry(teamID string, req *CreateTimeEntryRequest) error {
