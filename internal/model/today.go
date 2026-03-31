@@ -30,7 +30,6 @@ type Today struct {
 	cursor         int
 	wantsDetail    *api.Task
 	calculated     bool
-	forcePicker    *ui.Picker
 	planningMode   bool             // true when in planning mode
 	plannedToday   bool             // true after planning has been done today
 	planningPicker *ui.Picker       // multi-select picker for planning
@@ -248,7 +247,7 @@ func (t *Today) ClearWantsDetail() {
 
 // HasOverlay returns true if a picker overlay is active.
 func (t *Today) HasOverlay() bool {
-	return t.forcePicker != nil || t.planningPicker != nil
+	return t.planningPicker != nil
 }
 
 // TodayActions returns the current actions map.
@@ -448,7 +447,7 @@ func (t Today) Update(msg tea.Msg) (Today, tea.Cmd) {
 		if t.planningMode {
 			return t.handlePlanningResult(msg)
 		}
-		return t.handleForceResult(msg)
+		return t, nil
 
 	case tea.KeyMsg:
 		if t.planningPicker != nil {
@@ -462,13 +461,6 @@ func (t Today) Update(msg tea.Msg) (Today, tea.Cmd) {
 			return t, cmd
 		}
 
-		if t.forcePicker != nil {
-			p := *t.forcePicker
-			m, cmd := p.Update(msg)
-			np := m.(ui.Picker)
-			t.forcePicker = &np
-			return t, cmd
-		}
 		return t.updateNormal(msg)
 	}
 
@@ -479,14 +471,6 @@ func (t Today) Update(msg tea.Msg) (Today, tea.Cmd) {
 		t.planningPicker = &np
 		return t, cmd
 	}
-	if t.forcePicker != nil {
-		p := *t.forcePicker
-		m, cmd := p.Update(msg)
-		np := m.(ui.Picker)
-		t.forcePicker = &np
-		return t, cmd
-	}
-
 	return t, nil
 }
 
@@ -504,13 +488,6 @@ func (t Today) updateNormal(msg tea.KeyMsg) (Today, tea.Cmd) {
 		t.recalculate()
 		if t.cursor >= len(t.items) {
 			t.cursor = max(0, len(t.items)-1)
-		}
-	case "f":
-		// Open force picker — list all assigned, non-closed tasks not already in the list
-		items := t.forcePickerItems()
-		if len(items) > 0 {
-			p := ui.NewPicker("Force task into today", items, false)
-			t.forcePicker = &p
 		}
 	case "i":
 		if sel := t.SelectedTask(); sel != nil {
@@ -544,18 +521,6 @@ func (t Today) updateNormal(msg tea.KeyMsg) (Today, tea.Cmd) {
 			t.wantsDetail = sel
 		}
 	}
-	return t, nil
-}
-
-func (t Today) handleForceResult(res ui.PickerResult) (Today, tea.Cmd) {
-	t.forcePicker = nil
-	if res.Cancelled || len(res.Selected) == 0 {
-		return t, nil
-	}
-
-	taskID := res.Selected[0].ID
-	t.setAction(taskID, "forced")
-	t.recalculate()
 	return t, nil
 }
 
@@ -626,62 +591,6 @@ func (t *Today) removeAction(taskID string) {
 	}
 }
 
-func (t *Today) forcePickerItems() []ui.PickerItem {
-	// Collect IDs already in the list (excluding ignored tasks which should be force-able)
-	inList := make(map[string]bool)
-	for _, item := range t.items {
-		if item.Action != "ignored" {
-			inList[item.Task.ID] = true
-		}
-	}
-
-	var candidates []api.Task
-	for _, task := range t.state.Tasks {
-		if isClosedStatus(task.Status) {
-			continue
-		}
-		if inList[task.ID] {
-			continue
-		}
-		assigned := false
-		for _, a := range task.Assignees {
-			if t.state.CurrentUser != nil && a.ID == t.state.CurrentUser.ID {
-				assigned = true
-				break
-			}
-		}
-		if !assigned {
-			continue
-		}
-		candidates = append(candidates, task)
-	}
-
-	// Sort by priority then due date
-	sort.SliceStable(candidates, func(i, j int) bool {
-		iPri := priorityRank(candidates[i].Priority)
-		jPri := priorityRank(candidates[j].Priority)
-		if iPri != jPri {
-			return iPri < jPri
-		}
-		iDate, iOk := parseDueDate(candidates[i].DueDate)
-		jDate, jOk := parseDueDate(candidates[j].DueDate)
-		if iOk && jOk {
-			return iDate.Before(jDate)
-		}
-		return iOk && !jOk
-	})
-
-	var items []ui.PickerItem
-	for _, task := range candidates {
-		label := task.Name
-		if task.TimeEstimate > 0 {
-			label += " (" + ui.FormatDuration(task.TimeEstimate) + ")"
-		}
-		items = append(items, ui.PickerItem{ID: task.ID, Label: label})
-	}
-	return items
-}
-
 // View renders the Today view.
 func (t Today) View() string {
 	// Show planning prompt if not yet planned and no items
@@ -735,35 +644,6 @@ func (t Today) View() string {
 	// Overlay: planning picker
 	if t.planningPicker != nil {
 		result = t.renderPlanningOverlay(result)
-	}
-
-	// Overlay: force picker
-	if t.forcePicker != nil {
-		overlayContent := t.forcePicker.View()
-		overlayStyle := lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(ui.ColorBlue).
-			Background(ui.ColorCardBg).
-			Padding(1, 2).
-			Width(50)
-		overlayBox := overlayStyle.Render(overlayContent)
-
-		ovH := lipgloss.Height(overlayBox)
-		ovW := lipgloss.Width(overlayBox)
-		topPad := (tableH - ovH) / 2
-		leftPad := (t.width - ovW) / 2
-		if topPad < 0 {
-			topPad = 0
-		}
-		if leftPad < 0 {
-			leftPad = 0
-		}
-		leftStr := strings.Repeat(" ", leftPad)
-		lines := strings.Split(overlayBox, "\n")
-		for i, line := range lines {
-			lines[i] = leftStr + line
-		}
-		result = strings.Repeat("\n", topPad) + strings.Join(lines, "\n")
 	}
 
 	return result
@@ -970,7 +850,6 @@ func (t Today) keyBindings() []ui.KeyBinding {
 		{Key: "enter", Label: "detail"},
 		{Key: "p", Label: "plan"},
 		{Key: "c", Label: "recalculate"},
-		{Key: "f", Label: "force add"},
 		{Key: "i", Label: "ignore"},
 		{Key: "d", Label: "done for day"},
 		{Key: "u", Label: "undo"},
