@@ -22,6 +22,20 @@ func (c *Client) CreateTimeEntry(teamID string, req *CreateTimeEntryRequest) err
 	return nil
 }
 
+func (c *Client) DeleteTimeEntry(teamID, entryID string) error {
+	if err := c.Delete(fmt.Sprintf("/team/%s/time_entries/%s", teamID, entryID), nil); err != nil {
+		return fmt.Errorf("delete time entry %s: %w", entryID, err)
+	}
+	return nil
+}
+
+func (c *Client) UpdateTimeEntry(teamID, entryID string, req *UpdateTimeEntryRequest) error {
+	if err := c.Put(fmt.Sprintf("/team/%s/time_entries/%s", teamID, entryID), req, nil); err != nil {
+		return fmt.Errorf("update time entry %s: %w", entryID, err)
+	}
+	return nil
+}
+
 func (c *Client) StartTimer(teamID string, taskID string) error {
 	body := struct {
 		TID string `json:"tid"`

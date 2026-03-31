@@ -177,6 +177,61 @@ func TestGetRunningTimer_SingleObject(t *testing.T) {
 	}
 }
 
+func TestDeleteTimeEntry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/team/team1/time_entries/te1" {
+			t.Errorf("expected path /team/team1/time_entries/te1, got %s", r.URL.Path)
+		}
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	err := client.DeleteTimeEntry("team1", "te1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdateTimeEntry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/team/team1/time_entries/te1" {
+			t.Errorf("expected path /team/team1/time_entries/te1, got %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		var body map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["start"] == nil {
+			t.Error("expected start in request body")
+		}
+		if body["duration"] == nil {
+			t.Error("expected duration in request body")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
+	req := &api.UpdateTimeEntryRequest{
+		Start:    1000000,
+		End:      4600000,
+		Duration: 3600000,
+	}
+	err := client.UpdateTimeEntry("team1", "te1", req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGetRunningTimer_NoneRunning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
