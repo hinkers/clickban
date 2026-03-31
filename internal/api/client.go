@@ -48,6 +48,10 @@ func (c *Client) Put(path string, body interface{}, result interface{}) error {
 	return c.do(http.MethodPut, path, body, result)
 }
 
+func (c *Client) Delete(path string, result interface{}) error {
+	return c.do(http.MethodDelete, path, nil, result)
+}
+
 func (c *Client) do(method, path string, body interface{}, result interface{}) error {
 	var reqBody io.Reader
 	if body != nil {
