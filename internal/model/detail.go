@@ -61,6 +61,7 @@ type Detail struct {
 	timeEntries     []api.TimeEntry
 	timeEntriesList ui.TimeEntriesList
 	editingEntryID  string // entry ID being edited, used during edit flow
+	plannedToday bool // true if this task is forced into today's plan
 
 	wantsBack   bool
 	updatedTask *api.Task
@@ -132,6 +133,17 @@ type timerTickMsg struct{}
 type timeEntriesLoadedMsg struct {
 	entries []api.TimeEntry
 	err     error
+}
+
+// ToggleTodayForceMsg is emitted by the detail view to toggle a task's today force state.
+type ToggleTodayForceMsg struct {
+	TaskID string
+}
+
+// TodayForceUpdatedMsg is sent back to the detail view after toggling.
+type TodayForceUpdatedMsg struct {
+	TaskID string
+	Forced bool
 }
 
 // Init implements tea.Model — load comments.
@@ -228,6 +240,17 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 
 	case StatusMsg:
 		d.statusMsg = msg.Text
+		return d, nil
+
+	case TodayForceUpdatedMsg:
+		if msg.TaskID == d.task.ID {
+			d.plannedToday = msg.Forced
+			if msg.Forced {
+				d.statusMsg = "Added to today's plan"
+			} else {
+				d.statusMsg = "Removed from today's plan"
+			}
+		}
 		return d, nil
 
 	case ui.PickerResult:
@@ -434,6 +457,13 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 			d.timeEntriesList = ui.NewTimeEntriesList(sorted)
 			d.overlay = OverlayTimeEntries
 			return d, nil
+		}
+
+	case "P":
+		if d.focus == FocusMain {
+			return d, func() tea.Msg {
+				return ToggleTodayForceMsg{TaskID: d.task.ID}
+			}
 		}
 
 	case "c":
@@ -900,6 +930,7 @@ func (d Detail) View() string {
 			{Key: "T", Label: "estimate"},
 			{Key: "D", Label: "due date"},
 			{Key: "L", Label: "time log"},
+			{Key: "P", Label: "plan today"},
 			{Key: "c", Label: "comment"},
 			{Key: "tab", Label: "comments"},
 			{Key: "q", Label: "back"},
@@ -1078,6 +1109,15 @@ func (d Detail) renderMain(width, height int) string {
 			sb.WriteString(valueStyle.Render(due.Format("Jan 2, 2006")))
 			sb.WriteString("\n")
 		}
+	}
+
+	// Planned for Today indicator
+	if d.plannedToday {
+		sb.WriteString(lipgloss.NewStyle().
+			Foreground(ui.ColorPurple).
+			Bold(true).
+			Render("Planned for Today"))
+		sb.WriteString("\n")
 	}
 
 	// Description
