@@ -185,9 +185,10 @@ func (d Detail) loadRunningTimer() tea.Cmd {
 
 func (d Detail) loadTimeEntries() tea.Cmd {
 	client := d.state.Client
+	teamID := d.state.TeamID
 	taskID := d.task.ID
 	return func() tea.Msg {
-		entries, err := client.GetTimeEntries(taskID)
+		entries, err := client.GetTimeEntries(teamID, taskID)
 		return timeEntriesLoadedMsg{entries: entries, err: err}
 	}
 }

@@ -11,18 +11,21 @@ import (
 
 func TestGetTimeEntries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/task/t1/time" {
-			t.Errorf("expected path /task/t1/time, got %s", r.URL.Path)
+		if r.URL.Path != "/team/team1/time_entries" {
+			t.Errorf("expected path /team/team1/time_entries, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("task_id") != "t1" {
+			t.Errorf("expected task_id=t1, got %s", r.URL.Query().Get("task_id"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{
-					"user": map[string]interface{}{"id": 1, "username": "testuser"},
-					"time": 3600000,
-					"intervals": []map[string]interface{}{
-						{"id": "te1", "start": "1000000", "end": "4600000", "time": "3600000"},
-					},
+					"id":       "te1",
+					"user":     map[string]interface{}{"id": 1, "username": "testuser"},
+					"start":    "1000000",
+					"end":      "4600000",
+					"duration": "3600000",
 				},
 			},
 		})
@@ -30,7 +33,7 @@ func TestGetTimeEntries(t *testing.T) {
 	defer server.Close()
 
 	client := api.NewClient("pk_test", api.WithBaseURL(server.URL))
-	entries, err := client.GetTimeEntries("t1")
+	entries, err := client.GetTimeEntries("team1", "t1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

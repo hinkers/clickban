@@ -85,15 +85,18 @@ func NewToday(state AppState, c *cache.Cache) Today {
 	return t
 }
 
-// NewTodayWithState creates a Today model preserving existing actions.
-func NewTodayWithState(state AppState, c *cache.Cache, actions map[string]string) Today {
+// NewTodayWithState creates a Today model preserving existing actions and planning state.
+func NewTodayWithState(state AppState, c *cache.Cache, actions map[string]string, lastSessionIDs map[string]bool, plannedToday bool) Today {
 	t := Today{
-		state:        state,
-		cache:        c,
-		todayActions: actions,
-		plannedToday: true,
+		state:          state,
+		cache:          c,
+		todayActions:   actions,
+		plannedToday:   plannedToday,
+		lastSessionIDs: lastSessionIDs,
 	}
-	t.recalculate()
+	if plannedToday || len(actions) > 0 {
+		t.recalculate()
+	}
 	return t
 }
 

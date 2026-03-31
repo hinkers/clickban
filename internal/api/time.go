@@ -7,20 +7,12 @@ import (
 	"time"
 )
 
-func (c *Client) GetTimeEntries(taskID string) ([]TimeEntry, error) {
+func (c *Client) GetTimeEntries(teamID, taskID string) ([]TimeEntry, error) {
 	var resp TimeEntriesResponse
-	if err := c.Get(fmt.Sprintf("/task/%s/time", taskID), &resp); err != nil {
+	if err := c.Get(fmt.Sprintf("/team/%s/time_entries?task_id=%s", teamID, taskID), &resp); err != nil {
 		return nil, fmt.Errorf("get time entries for task %s: %w", taskID, err)
 	}
-	// Flatten per-user groups into a single list of entries
-	var entries []TimeEntry
-	for _, group := range resp.Data {
-		for _, interval := range group.Intervals {
-			interval.User = group.User
-			entries = append(entries, interval)
-		}
-	}
-	return entries, nil
+	return resp.Data, nil
 }
 
 func (c *Client) CreateTimeEntry(teamID string, req *CreateTimeEntryRequest) error {

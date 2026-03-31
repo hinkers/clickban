@@ -165,7 +165,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
 		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
 		if a.today.calculated {
-			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions, a.today.lastSessionIDs, a.today.plannedToday).Resize(a.width, a.height-1)
 		} else {
 			a.today = NewToday(a.state, a.cache).Resize(a.width, a.height-1)
 		}
@@ -188,7 +188,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
 		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
-		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions, a.today.lastSessionIDs, a.today.plannedToday).Resize(a.width, a.height-1)
 
 	case ui.PickerResult:
 		// Handle create task list picker
@@ -235,7 +235,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.state.Tasks = append(a.state.Tasks, *msg.Task)
 			a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
 			a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
-			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
+			a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions, a.today.lastSessionIDs, a.today.plannedToday).Resize(a.width, a.height-1)
 			// Open the new task in detail view
 			a.detailFrom = a.view
 			a.detail = NewDetail(*msg.Task, a.state).Resize(a.width, a.height-1)
@@ -557,7 +557,7 @@ func (a *App) propagateDetailUpdates() {
 		}
 		a.kanban = NewKanbanWithOptions(a.state, a.kanban.showClosed, a.kanban.sortMode).Resize(a.width, a.height-1)
 		a.myTasks = NewMyTasksWithFilter(a.state, a.myTasks.needsDataFilter, a.myTasks.showClosed).Resize(a.width, a.height-1)
-		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions).Resize(a.width, a.height-1)
+		a.today = NewTodayWithState(a.state, a.cache, a.today.todayActions, a.today.lastSessionIDs, a.today.plannedToday).Resize(a.width, a.height-1)
 	}
 }
 

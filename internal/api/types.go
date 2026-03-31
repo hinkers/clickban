@@ -192,29 +192,22 @@ type CommentsResponse struct {
 	Comments []Comment `json:"comments"`
 }
 
-// TimeEntry represents a flattened time tracking interval with its user.
+// TimeEntry represents a time tracking entry.
 type TimeEntry struct {
 	ID          string `json:"id"`
-	User        User   `json:"-"` // populated from parent grouping
+	User        User   `json:"user"`
 	Billable    bool   `json:"billable"`
 	Start       string `json:"start"`
 	End         string `json:"end"`
-	Duration    string `json:"time"` // ClickUp uses "time" for interval duration
+	Duration    string `json:"duration"`
 	Description string `json:"description"`
 	Tags        []Tag  `json:"tags"`
 	Source      string `json:"source"`
 }
 
-// timeEntryGroup is a per-user grouping returned by the ClickUp task time endpoint.
-type timeEntryGroup struct {
-	User      User        `json:"user"`
-	Time      int64       `json:"time"`
-	Intervals []TimeEntry `json:"intervals"`
-}
-
 // TimeEntriesResponse is the API response for listing time entries.
 type TimeEntriesResponse struct {
-	Data []timeEntryGroup `json:"data"`
+	Data []TimeEntry `json:"data"`
 }
 
 // RunningTimer represents an actively running timer.
