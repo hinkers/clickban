@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -212,7 +213,9 @@ func (d Detail) Update(msg tea.Msg) (Detail, tea.Cmd) {
 		return d, nil
 
 	case timeEntriesLoadedMsg:
-		if msg.err == nil {
+		if msg.err != nil {
+			d.statusMsg = "time entries load failed: " + msg.err.Error()
+		} else {
 			d.timeEntries = msg.entries
 		}
 		return d, nil
@@ -421,7 +424,14 @@ func (d Detail) updateMain(msg tea.KeyMsg) (Detail, tea.Cmd) {
 
 	case "L":
 		if d.focus == FocusMain {
-			d.timeEntriesList = ui.NewTimeEntriesList(d.timeEntries)
+			sorted := make([]api.TimeEntry, len(d.timeEntries))
+			copy(sorted, d.timeEntries)
+			sort.Slice(sorted, func(i, j int) bool {
+				si, _ := strconv.ParseInt(sorted[i].Start, 10, 64)
+				sj, _ := strconv.ParseInt(sorted[j].Start, 10, 64)
+				return si > sj
+			})
+			d.timeEntriesList = ui.NewTimeEntriesList(sorted)
 			d.overlay = OverlayTimeEntries
 			return d, nil
 		}
@@ -712,11 +722,17 @@ func (d Detail) handleTimeEntryAction(action ui.TimeEntryAction) (Detail, tea.Cm
 }
 
 func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
-	d.overlay = OverlayNone
 	if res.Cancelled {
-		d.editingEntryID = ""
+		if d.editingEntryID != "" {
+			d.editingEntryID = ""
+			d.timeEntriesList = ui.NewTimeEntriesList(d.timeEntries)
+			d.overlay = OverlayTimeEntries
+		} else {
+			d.overlay = OverlayNone
+		}
 		return d, nil
 	}
+	d.overlay = OverlayNone
 
 	client := d.state.Client
 	taskID := d.task.ID
@@ -757,6 +773,8 @@ func (d Detail) handleTimerResult(res ui.TimerResult) (Detail, tea.Cmd) {
 		}
 		updated := d.task
 		d.updatedTask = &updated
+		d.timeEntriesList = ui.NewTimeEntriesList(d.timeEntries)
+		d.overlay = OverlayTimeEntries
 
 		return d, func() tea.Msg {
 			req := &api.UpdateTimeEntryRequest{
