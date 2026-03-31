@@ -13,14 +13,15 @@ import (
 
 // MyTasks is the my-tasks table view model.
 type MyTasks struct {
-	state           AppState
-	tasks           []api.Task
-	cursor          int
-	wantsDetail     *api.Task
-	needsDataFilter bool
-	showClosed      bool
-	width           int
-	height          int
+	state            AppState
+	tasks            []api.Task
+	cursor           int
+	wantsDetail      *api.Task
+	needsDataFilter  bool
+	showClosed       bool
+	closedStartIndex int // index where closed tasks begin in the tasks slice
+	width            int
+	height           int
 }
 
 func (m *MyTasks) listName(listID string) string {
@@ -187,6 +188,13 @@ func (m MyTasks) renderTable(width, height int) string {
 			break
 		}
 
+		// Section divider before closed tasks
+		if m.showClosed && i == m.closedStartIndex && m.closedStartIndex > 0 && m.closedStartIndex < len(m.tasks) {
+			sectionLabel := lipgloss.NewStyle().Foreground(ui.ColorFgDim).Bold(true).Render("  ── Completed ──")
+			sb.WriteString(sectionLabel + "\n")
+			maxRows-- // account for divider line
+		}
+
 		selected := i == m.cursor
 
 		// Priority display
@@ -205,6 +213,9 @@ func (m MyTasks) renderTable(width, height int) string {
 		nameStyle := lipgloss.NewStyle().Foreground(ui.ColorFg).Width(nameW)
 		if selected {
 			nameStyle = nameStyle.Foreground(ui.ColorBlue).Bold(true)
+		}
+		if isClosedStatus(task.Status) {
+			nameStyle = nameStyle.Strikethrough(true).Foreground(ui.ColorFgDim)
 		}
 		nameCell := nameStyle.Render(name)
 
@@ -295,14 +306,28 @@ func (m *MyTasks) filterTasks() []api.Task {
 		}
 		tasks = append(tasks, t)
 	}
-	sort.SliceStable(tasks, func(i, j int) bool {
-		iClosed := isClosedStatus(tasks[i].Status)
-		jClosed := isClosedStatus(tasks[j].Status)
-		if iClosed != jClosed {
-			return !iClosed // open tasks first
+	// Separate open and closed tasks
+	var open, closed []api.Task
+	for _, t := range tasks {
+		if isClosedStatus(t.Status) {
+			closed = append(closed, t)
+		} else {
+			open = append(open, t)
 		}
-		return priorityRank(tasks[i].Priority) < priorityRank(tasks[j].Priority)
+	}
+	// Sort open by priority
+	sort.SliceStable(open, func(i, j int) bool {
+		return priorityRank(open[i].Priority) < priorityRank(open[j].Priority)
 	})
-	return tasks
+	// Sort closed by last updated descending
+	sort.SliceStable(closed, func(i, j int) bool {
+		return closed[i].DateUpdated > closed[j].DateUpdated
+	})
+	// Open first, then closed
+	result := make([]api.Task, 0, len(open)+len(closed))
+	result = append(result, open...)
+	m.closedStartIndex = len(open)
+	result = append(result, closed...)
+	return result
 }
 
